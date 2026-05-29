@@ -1,6 +1,6 @@
 <p align="center">
   <pre align="center">
-oooo                                         .o88o.
+           oooo                                         .o88o.
           `888                                         888 `"
  .ooooo.   888  oooo   .ooooo.   .ooooo.  ooo. .oo.   o888oo
 d88' `88b  888 .8P'   d88' `"Y8 d88' `88b `888P"Y88b   888
