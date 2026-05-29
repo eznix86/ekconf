@@ -11,6 +11,7 @@ var useCmd = &cobra.Command{
 	Use:   "use <name>",
 	Short: "Set the active context",
 	Args:  cobra.ExactArgs(1),
+	ValidArgsFunction: completeContext,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		contextName := args[0]
 

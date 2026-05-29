@@ -14,6 +14,7 @@ var viewCmd = &cobra.Command{
 	Use:   "view <name>",
 	Short: "Decrypt and print a single context's kubeconfig",
 	Args:  cobra.ExactArgs(1),
+	ValidArgsFunction: completeContext,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		contextName := args[0]
 

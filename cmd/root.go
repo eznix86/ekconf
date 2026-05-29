@@ -67,6 +67,19 @@ func resolvePasswordWithKeychain(useKeychain bool) (string, error) {
 	return passwordResolve(passwordFlag, passwordStdin, useKeychain)
 }
 
+func completeContext(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	cfg, err := config.Load()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	var names []string
+	for name := range cfg.Contexts {
+		names = append(names, name)
+	}
+	return names, cobra.ShellCompDirectiveNoFileComp
+}
+
 func storePasswordIfNeeded(pw string) {
 	if !shouldUseKeychain() {
 		return

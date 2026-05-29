@@ -51,6 +51,7 @@ func tempDir() string {
 var execCmd = &cobra.Command{
 	Use:   "exec [<name>] -- <cmd>",
 	Short: "Run a command with decrypted config injected via KUBECONFIG",
+	ValidArgsFunction: completeContext,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var contextName string
 		var commandArgs []string

@@ -14,6 +14,7 @@ var rmCmd = &cobra.Command{
 	Use:   "rm <name>",
 	Short: "Remove a context from config.enc",
 	Args:  cobra.ExactArgs(1),
+	ValidArgsFunction: completeContext,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		contextName := args[0]
 
