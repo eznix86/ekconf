@@ -49,6 +49,15 @@ Or build from source:
 git clone https://github.com/eznix86/ekconf
 cd ekconf
 go install .
+
+## Getting started
+
+```sh
+# Import your existing ~/.kube/config into the encrypted store
+ekconf import
+
+# Or add individual kubeconfig files
+ekconf add ~/path/to/kubeconfig.yaml -n my-cluster
 ```
 
 ## Commands
