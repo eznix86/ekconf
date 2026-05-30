@@ -21,7 +21,9 @@ d88' `88b  888 .8P'   d88' `"Y8 d88' `88b `888P"Y88b   888
 
 Encrypted kubeconfig manager. Inspired by
 [`particledecay/kconf`](https://github.com/particledecay/kconf) which stores
-kubeconfigs in plaintext.
+kubeconfigs in plaintext. `ekconf` keeps them encrypted at rest using
+AES-256-GCM and Argon2id, with optional macOS Keychain and Linux Keyring
+integration.
 
 ## Installation
 
