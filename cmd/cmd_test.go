@@ -743,6 +743,208 @@ func TestExec_PreservesChildExitCode(t *testing.T) {
 	}
 }
 
+func TestRm_NotFound(t *testing.T) {
+	setupTestHome(t)
+	writeTestConfigYAML(t, "keychain: false\ncurrent: \"\"\ncontexts: {}\n")
+
+	encPath, err := config.EncPath()
+	require.NoError(t, err)
+	kc := clientcmdapi.NewConfig()
+	data, err := clientcmd.Write(*kc)
+	require.NoError(t, err)
+	ef, err := crypto.Encrypt(data, "test-password")
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(filepath.Dir(encPath), 0o700))
+	require.NoError(t, os.WriteFile(encPath, crypto.Marshal(ef), 0o600))
+
+	passwordFlag = "test-password"
+	t.Cleanup(func() { passwordFlag = "" })
+
+	err = executeCommand("rm", "nonexistent")
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "not found")
+}
+
+func TestRm_Single(t *testing.T) {
+	setupTestHome(t)
+	writeTestConfigYAML(t, "keychain: false\ncurrent: staging\ncontexts:\n  staging:\n    namespace: staging\n  prod:\n    namespace: production\n")
+
+	// Write config.enc with staging + prod
+	encPath, err := config.EncPath()
+	require.NoError(t, err)
+	kc := clientcmdapi.NewConfig()
+	kc.CurrentContext = "staging"
+	kc.Contexts["staging"] = &clientcmdapi.Context{Cluster: "staging-cluster", AuthInfo: "staging-user"}
+	kc.Contexts["prod"] = &clientcmdapi.Context{Cluster: "prod-cluster", AuthInfo: "prod-user"}
+	kc.Clusters["staging-cluster"] = &clientcmdapi.Cluster{Server: "https://staging.example.com"}
+	kc.Clusters["prod-cluster"] = &clientcmdapi.Cluster{Server: "https://prod.example.com"}
+	kc.AuthInfos["staging-user"] = &clientcmdapi.AuthInfo{Username: "deploy"}
+	kc.AuthInfos["prod-user"] = &clientcmdapi.AuthInfo{Username: "admin"}
+	data, err := clientcmd.Write(*kc)
+	require.NoError(t, err)
+	ef, err := crypto.Encrypt(data, "test-password")
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(filepath.Dir(encPath), 0o700))
+	require.NoError(t, os.WriteFile(encPath, crypto.Marshal(ef), 0o600))
+
+	passwordFlag = "test-password"
+	t.Cleanup(func() { passwordFlag = "" })
+
+	output := captureOutput(t)
+
+	err = executeCommand("rm", "staging")
+	require.NoError(t, err)
+
+	assert.Contains(t, output(), "Removed context 'staging'")
+
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	assert.NotContains(t, cfg.Contexts, "staging")
+	assert.Contains(t, cfg.Contexts, "prod")
+	// current was reset since staging was active
+	assert.Empty(t, cfg.Current)
+
+	// Verify cluster and auth info removed
+	kubeconfig, err := loadDecryptedKubeconfig("test-password")
+	require.NoError(t, err)
+	assert.NotContains(t, kubeconfig.Contexts, "staging")
+	assert.NotContains(t, kubeconfig.Clusters, "staging-cluster")
+	assert.NotContains(t, kubeconfig.AuthInfos, "staging-user")
+	// Unrelated entries survive
+	assert.Contains(t, kubeconfig.Contexts, "prod")
+}
+
+func TestRm_Multiple(t *testing.T) {
+	setupTestHome(t)
+	writeTestConfigYAML(t, "keychain: false\ncurrent: staging\ncontexts:\n  staging:\n    namespace: staging\n  prod:\n    namespace: production\n  dev:\n    namespace: dev\n")
+
+	// Write config.enc with staging + prod + dev
+	encPath, err := config.EncPath()
+	require.NoError(t, err)
+	kc := clientcmdapi.NewConfig()
+	kc.CurrentContext = "staging"
+	kc.Contexts["staging"] = &clientcmdapi.Context{Cluster: "staging-cluster", AuthInfo: "staging-user"}
+	kc.Contexts["prod"] = &clientcmdapi.Context{Cluster: "prod-cluster", AuthInfo: "prod-user"}
+	kc.Contexts["dev"] = &clientcmdapi.Context{Cluster: "dev-cluster", AuthInfo: "dev-user"}
+	kc.Clusters["staging-cluster"] = &clientcmdapi.Cluster{Server: "https://staging.example.com"}
+	kc.Clusters["prod-cluster"] = &clientcmdapi.Cluster{Server: "https://prod.example.com"}
+	kc.Clusters["dev-cluster"] = &clientcmdapi.Cluster{Server: "https://dev.example.com"}
+	kc.AuthInfos["staging-user"] = &clientcmdapi.AuthInfo{Username: "deploy"}
+	kc.AuthInfos["prod-user"] = &clientcmdapi.AuthInfo{Username: "admin"}
+	kc.AuthInfos["dev-user"] = &clientcmdapi.AuthInfo{Username: "dev"}
+	data, err := clientcmd.Write(*kc)
+	require.NoError(t, err)
+	ef, err := crypto.Encrypt(data, "test-password")
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(filepath.Dir(encPath), 0o700))
+	require.NoError(t, os.WriteFile(encPath, crypto.Marshal(ef), 0o600))
+
+	passwordFlag = "test-password"
+	t.Cleanup(func() { passwordFlag = "" })
+
+	output := captureOutput(t)
+
+	err = executeCommand("rm", "staging", "dev")
+	require.NoError(t, err)
+
+	got := output()
+	assert.Contains(t, got, "Removed context 'staging'")
+	assert.Contains(t, got, "Removed context 'dev'")
+
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	assert.NotContains(t, cfg.Contexts, "staging")
+	assert.NotContains(t, cfg.Contexts, "dev")
+	assert.Contains(t, cfg.Contexts, "prod")
+}
+
+func TestRm_PartialNotFound(t *testing.T) {
+	setupTestHome(t)
+	writeTestConfigYAML(t, "keychain: false\ncurrent: \"\"\ncontexts:\n  staging:\n    namespace: staging\n")
+
+	encPath, err := config.EncPath()
+	require.NoError(t, err)
+	kc := clientcmdapi.NewConfig()
+	kc.Contexts["staging"] = &clientcmdapi.Context{Cluster: "staging-cluster", AuthInfo: "staging-user"}
+	kc.Clusters["staging-cluster"] = &clientcmdapi.Cluster{Server: "https://staging.example.com"}
+	kc.AuthInfos["staging-user"] = &clientcmdapi.AuthInfo{Username: "deploy"}
+	data, err := clientcmd.Write(*kc)
+	require.NoError(t, err)
+	ef, err := crypto.Encrypt(data, "test-password")
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(filepath.Dir(encPath), 0o700))
+	require.NoError(t, os.WriteFile(encPath, crypto.Marshal(ef), 0o600))
+
+	passwordFlag = "test-password"
+	t.Cleanup(func() { passwordFlag = "" })
+
+	output := captureOutput(t)
+
+	err = executeCommand("rm", "staging", "missing")
+	// The one that was found should be removed, but error for the missing one
+	require.Error(t, err)
+	require.ErrorContains(t, err, "context(s) not found: missing")
+	assert.Contains(t, output(), "Removed context 'staging'")
+
+	// staging should still be removed despite the error
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	assert.NotContains(t, cfg.Contexts, "staging")
+}
+
+func TestRm_NoContexts(t *testing.T) {
+	setupTestHome(t)
+	writeTestConfigYAML(t, "keychain: false\ncurrent: \"\"\ncontexts: {}\n")
+
+	encPath, err := config.EncPath()
+	require.NoError(t, err)
+	kc := clientcmdapi.NewConfig()
+	kc.CurrentContext = ""
+	data, err := clientcmd.Write(*kc)
+	require.NoError(t, err)
+	ef, err := crypto.Encrypt(data, "test-password")
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(filepath.Dir(encPath), 0o700))
+	require.NoError(t, os.WriteFile(encPath, crypto.Marshal(ef), 0o600))
+
+	passwordFlag = "test-password"
+	t.Cleanup(func() { passwordFlag = "" })
+
+	err = executeCommand("rm", "nonexistent")
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "not found")
+}
+
+func TestRm_SharedClusterAuthInfoPreserved(t *testing.T) {
+	setupTestHome(t)
+	writeTestConfigYAML(t, "keychain: false\ncurrent: \"\"\ncontexts:\n  ctx1:\n    namespace: default\n  ctx2:\n    namespace: default\n")
+
+	encPath, err := config.EncPath()
+	require.NoError(t, err)
+	kc := clientcmdapi.NewConfig()
+	kc.Contexts["ctx1"] = &clientcmdapi.Context{Cluster: "shared-cluster", AuthInfo: "shared-user"}
+	kc.Contexts["ctx2"] = &clientcmdapi.Context{Cluster: "shared-cluster", AuthInfo: "shared-user"}
+	kc.Clusters["shared-cluster"] = &clientcmdapi.Cluster{Server: "https://shared.example.com"}
+	kc.AuthInfos["shared-user"] = &clientcmdapi.AuthInfo{Token: "shared-token"}
+	data, err := clientcmd.Write(*kc)
+	require.NoError(t, err)
+	ef, err := crypto.Encrypt(data, "test-password")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(encPath, crypto.Marshal(ef), 0o600))
+
+	passwordFlag = "test-password"
+	t.Cleanup(func() { passwordFlag = "" })
+
+	err = executeCommand("rm", "ctx1")
+	require.NoError(t, err)
+
+	kubeconfig, err := loadDecryptedKubeconfig("test-password")
+	require.NoError(t, err)
+	// shared cluster and auth info survive because ctx2 still references them
+	assert.Contains(t, kubeconfig.Clusters, "shared-cluster")
+	assert.Contains(t, kubeconfig.AuthInfos, "shared-user")
+}
+
 func TestRootHelp(t *testing.T) {
 	resetCommandTestState(t)
 	output := captureOutput(t)

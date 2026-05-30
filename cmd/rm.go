@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/eznix86/ekconf/internal/config"
 	"github.com/eznix86/ekconf/internal/crypto"
@@ -11,17 +12,21 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+type removeResult struct {
+	name  string
+	found bool
+}
+
 var rmCmd = &cobra.Command{
-	Use:   "rm <name>",
-	Short: "Remove a context from config.enc",
-	Long:  `Remove a context and its unreferenced clusters and auth infos from the encrypted kubeconfig.`,
+	Use:   "rm <name> [<name>...]",
+	Short: "Remove one or more contexts from config.enc",
+	Long:  `Remove one or more contexts and their unreferenced clusters and auth infos from the encrypted kubeconfig.`,
 	Example: `  ekconf rm staging
-  ekconf rm --password=secret prod`,
-	Args:              cobra.ExactArgs(1),
+  ekconf rm staging prod
+  ekconf rm --password=secret prod development`,
+	Args:              cobra.MinimumNArgs(1),
 	ValidArgsFunction: completeContext,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		contextName := args[0]
-
 		password, err := resolvePassword()
 		if err != nil {
 			return err
@@ -37,28 +42,15 @@ var rmCmd = &cobra.Command{
 			return err
 		}
 
-		ctx, ok := kubeconfig.Contexts[contextName]
-		if !ok {
-			return fmt.Errorf("context '%s' not found", contextName)
-		}
-
-		delete(kubeconfig.Contexts, contextName)
-
-		if !clusterInUse(kubeconfig.Contexts, ctx.Cluster) {
-			delete(kubeconfig.Clusters, ctx.Cluster)
-		}
-
-		if !authInfoInUse(kubeconfig.Contexts, ctx.AuthInfo) {
-			delete(kubeconfig.AuthInfos, ctx.AuthInfo)
-		}
-
 		cfg, err := config.Load()
 		if err != nil {
 			return fmt.Errorf("load config: %w", err)
 		}
-		delete(cfg.Contexts, contextName)
-		if cfg.Current == contextName {
-			cfg.Current = ""
+
+		results := make([]removeResult, 0, len(args))
+		for _, name := range args {
+			result := removeContext(cfg, kubeconfig, name)
+			results = append(results, result)
 		}
 
 		mergedData, err := clientcmd.Write(*kubeconfig)
@@ -90,9 +82,43 @@ var rmCmd = &cobra.Command{
 
 		storePasswordIfNeeded(cmd.ErrOrStderr(), password)
 
-		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Removed context '%s'\n", contextName)
-		return err
+		var notFound []string
+		for _, r := range results {
+			if r.found {
+				fmt.Fprintf(cmd.OutOrStdout(), "Removed context '%s'\n", r.name)
+			} else {
+				notFound = append(notFound, r.name)
+			}
+		}
+		if len(notFound) > 0 {
+			return fmt.Errorf("context(s) not found: %s", joinStrings(notFound))
+		}
+		return nil
 	},
+}
+
+func removeContext(cfg *config.Config, kubeconfig *clientcmdapi.Config, name string) removeResult {
+	ctx, ok := kubeconfig.Contexts[name]
+	if !ok {
+		return removeResult{name: name, found: false}
+	}
+
+	delete(kubeconfig.Contexts, name)
+
+	if !clusterInUse(kubeconfig.Contexts, ctx.Cluster) {
+		delete(kubeconfig.Clusters, ctx.Cluster)
+	}
+
+	if !authInfoInUse(kubeconfig.Contexts, ctx.AuthInfo) {
+		delete(kubeconfig.AuthInfos, ctx.AuthInfo)
+	}
+
+	delete(cfg.Contexts, name)
+	if cfg.Current == name {
+		cfg.Current = ""
+	}
+
+	return removeResult{name: name, found: true}
 }
 
 func clusterInUse(contexts map[string]*clientcmdapi.Context, clusterName string) bool {
@@ -111,6 +137,21 @@ func authInfoInUse(contexts map[string]*clientcmdapi.Context, authInfoName strin
 		}
 	}
 	return false
+}
+
+func joinStrings(s []string) string {
+	if len(s) == 0 {
+		return ""
+	}
+	if len(s) == 1 {
+		return s[0]
+	}
+	var result strings.Builder
+	result.WriteString(s[0])
+	for _, v := range s[1:] {
+		result.WriteString(", " + v)
+	}
+	return result.String()
 }
 
 func init() {
