@@ -75,69 +75,67 @@ Use --check to check for updates without installing.`,
 		}
 
 		var (
-			platform  updatePlatform
 			release   *githubRelease
 			assetName string
 			data      []byte
 			checksums []byte
-			binary    []byte
-			updateErr error
 		)
 
-		if err := spinner.New().Title("Fetching release...").Action(func() {
-			platform, updateErr = normalizePlatform(runtime.GOOS, runtime.GOARCH)
-			if updateErr != nil {
-				return
-			}
-			release, updateErr = fetchLatestRelease(cmd.Context())
-			if updateErr != nil {
-				return
-			}
-			assetName = updateAssetName(strings.TrimPrefix(release.TagName, "v"), platform)
+		steps := []struct {
+			title  string
+			action func() error
+		}{
+			{"Fetching release...", func() error {
+				platform, err := normalizePlatform(runtime.GOOS, runtime.GOARCH)
+				if err != nil {
+					return err
+				}
 
-			var assetURL string
-			assetURL, updateErr = releaseAssetURL(release, assetName)
-			if updateErr != nil {
-				return
-			}
-			data, updateErr = downloadAsset(cmd.Context(), assetURL)
-			if updateErr != nil {
-				return
-			}
+				release, err = fetchLatestRelease(cmd.Context())
+				if err != nil {
+					return err
+				}
 
-			var checksumURL string
-			checksumURL, updateErr = releaseAssetURL(release, "checksums.txt")
-			if updateErr != nil {
-				return
-			}
-			checksums, updateErr = downloadAsset(cmd.Context(), checksumURL)
-		}).Run(); err != nil {
-			return err
-		}
-		if updateErr != nil {
-			return updateErr
+				assetName = updateAssetName(strings.TrimPrefix(release.TagName, "v"), platform)
+				assetURL, err := releaseAssetURL(release, assetName)
+				if err != nil {
+					return err
+				}
+				data, err = downloadAsset(cmd.Context(), assetURL)
+				if err != nil {
+					return err
+				}
+
+				checksumURL, err := releaseAssetURL(release, "checksums.txt")
+				if err != nil {
+					return err
+				}
+				checksums, err = downloadAsset(cmd.Context(), checksumURL)
+				return err
+			}},
+			{"Verifying checksum...", func() error {
+				return verifyReleaseChecksum(checksums, releasePayload{assetName: assetName, data: data})
+			}},
+			{"Installing update...", func() error {
+				binary, err := extractBinaryFromTarGz(data)
+				if err != nil {
+					return err
+				}
+				return replaceCurrentExecutable(binary)
+			}},
 		}
 
-		if err := spinner.New().Title("Verifying checksum...").Action(func() {
-			updateErr = verifyReleaseChecksum(checksums, releasePayload{assetName: assetName, data: data})
-		}).Run(); err != nil {
-			return err
-		}
-		if updateErr != nil {
-			return updateErr
-		}
-
-		if err := spinner.New().Title("Installing update...").Action(func() {
-			binary, updateErr = extractBinaryFromTarGz(data)
-			if updateErr != nil {
-				return
+		for _, s := range steps {
+			var actionErr error
+			if err := spinner.New().Title(s.title).Action(func() {
+				actionErr = s.action()
+			}).Run(); err != nil {
+				return err
 			}
-			updateErr = replaceCurrentExecutable(binary)
-		}).Run(); err != nil {
-			return err
-		}
-		if updateErr != nil {
-			return updateErr
+			if actionErr != nil {
+				return actionErr
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "✓ %s\n", s.title)
 		}
 
 		_, err := fmt.Fprintf(cmd.OutOrStdout(), "Updated ekconf to %s\n", release.TagName)
