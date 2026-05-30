@@ -155,7 +155,8 @@ Then restart your shell or run `compinit`.
 ```sh
 alias kconf=ekconf
 
-# plain kconf (original kconf renamed to pkconf to manage plain ones)
+# Plain kconf (original) renamed to pkconf so both encrypted and
+# unencrypted/ejected kubeconfigs can be managed side by side
 alias pkconf="/opt/homebrew/bin/kconf"
 
 # Use --no-shell for non-interactive tools
