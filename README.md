@@ -171,7 +171,7 @@ alias kubectl="ekconf exec --no-shell -- kubectl"
 
 # Works with kubecolor, k9s, custom scripts, or any kubectl wrapper
 alias k=kubectl
-alias kubecolor=kubectl
+alias kubecolor="ekconf exec --no-shell -- kubecolor"
 stern() {
   command ekconf exec -- "$(command -v stern)" "$@"
 }
