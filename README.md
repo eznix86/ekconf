@@ -111,6 +111,10 @@ Enable keychain storage:
 ekconf config keychain=true
 ```
 
+> **Linux**: requires `libsecret` and a Secret Service provider
+> (`gnome-keyring`, `kwallet`, etc.). Install with your package manager:
+> `apt install libsecret-1-0 gnome-keyring` or `dnf install libsecret gnome-keyring`.
+
 ### Self-update
 
 ```sh
