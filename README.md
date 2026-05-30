@@ -154,17 +154,11 @@ alias k=kubectl
 alias kubecolor=kubectl
 
 # Use --no-shell for non-interactive tools
+alias helm="ekconf exec --no-shell -- helm"
 stern() {
   command ekconf exec --no-shell -- "$(command -v stern)" "$@"
 }
-helm() {
-  command ekconf exec --no-shell -- "$(command -v helm)" "$@"
-}
 
-# Custom kubectl wrapper scripts also work
-kubectl() {
-  command ekconf exec --no-shell -- /usr/bin/custom-kubectl.py "$@"
-}
 ```
 
 ## Configuration
