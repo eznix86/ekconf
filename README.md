@@ -210,8 +210,8 @@ commands like `ls` and `use` never need your password.
 Migrate from a plaintext `~/.kube/config` into the encrypted store.
 
 ```sh
-ekconf import          # import and keep the source
-ekconf import --force  # import and remove ~/.kube/config
+ekconf import                # import and keep the source
+ekconf import --force        # import and remove ~/.kube/config
 ```
 
 ##### `ekconf eject [<name>...] [--force]`
@@ -219,9 +219,9 @@ ekconf import --force  # import and remove ~/.kube/config
 Export contexts from the encrypted store back to plaintext `~/.kube/config`.
 
 ```sh
-ekconf eject                  # all contexts
-ekconf eject prod             # single context
-ekconf eject staging prod --force  # multiple, skip prompt
+ekconf eject                          # all contexts
+ekconf eject prod                     # single context
+ekconf eject staging prod --force     # multiple, skip prompt
 ```
 
 ## License
