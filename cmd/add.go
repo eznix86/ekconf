@@ -128,7 +128,7 @@ var addCmd = &cobra.Command{
 				existingKubeconfig.AuthInfos[ctx.AuthInfo] = authInfo
 			}
 
-			if err := config.AddContext(r.dst, ""); err != nil {
+			if err := config.AddContext(r.dst, ctx.Namespace); err != nil {
 				return fmt.Errorf("update config.yaml: %w", err)
 			}
 		}
