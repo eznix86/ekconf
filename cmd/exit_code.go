@@ -18,6 +18,6 @@ func (e *exitCodeError) ExitCode() int {
 	return e.code
 }
 
-func usageErrorf(format string, args ...interface{}) error {
+func usageErrorf(format string, args ...any) error {
 	return &exitCodeError{code: 2, msg: fmt.Sprintf(format, args...)}
 }
