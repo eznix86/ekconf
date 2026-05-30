@@ -173,12 +173,19 @@ func mergeKubeconfigContexts(
 			continue
 		}
 
-		existingKubeconfig.Contexts[r.dst] = ctx
+		clusterName := r.dst + "/" + ctx.Cluster
+		authInfoName := r.dst + "/" + ctx.AuthInfo
+
 		if cluster, ok := kubeconfig.Clusters[ctx.Cluster]; ok {
-			existingKubeconfig.Clusters[ctx.Cluster] = cluster
+			existingKubeconfig.Clusters[clusterName] = cluster
 		}
 		if authInfo, ok := kubeconfig.AuthInfos[ctx.AuthInfo]; ok {
-			existingKubeconfig.AuthInfos[ctx.AuthInfo] = authInfo
+			existingKubeconfig.AuthInfos[authInfoName] = authInfo
+		}
+		existingKubeconfig.Contexts[r.dst] = &clientcmdapi.Context{
+			Cluster:   clusterName,
+			AuthInfo:  authInfoName,
+			Namespace: ctx.Namespace,
 		}
 
 		cfg.Contexts[r.dst] = config.ContextEntry{Namespace: ctx.Namespace}

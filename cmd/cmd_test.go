@@ -265,6 +265,94 @@ func TestNS_NoActiveContext(t *testing.T) {
 	assert.ErrorContains(t, err, "no active context set")
 }
 
+func TestMergeKubeconfigContexts_PrefixesClusterAndAuthInfoNames(t *testing.T) {
+	cfg := &config.Config{Contexts: map[string]config.ContextEntry{}}
+	existing := clientcmdapi.NewConfig()
+	initializeKubeconfigMaps(existing)
+
+	src := clientcmdapi.NewConfig()
+	src.Contexts["admin@prod"] = &clientcmdapi.Context{Cluster: "prod-cluster", AuthInfo: "user"}
+	src.Clusters["prod-cluster"] = &clientcmdapi.Cluster{Server: "https://prod.example.com"}
+	src.AuthInfos["user"] = &clientcmdapi.AuthInfo{Token: "prod-token"}
+
+	mergeKubeconfigContexts(cfg, existing, src, []contextRename{{src: "admin@prod", dst: "admin@prod"}})
+
+	assert.Equal(t, "admin@prod/prod-cluster", existing.Contexts["admin@prod"].Cluster)
+	assert.Equal(t, "admin@prod/user", existing.Contexts["admin@prod"].AuthInfo)
+	assert.Equal(t, "https://prod.example.com", existing.Clusters["admin@prod/prod-cluster"].Server)
+	assert.Equal(t, "prod-token", existing.AuthInfos["admin@prod/user"].Token)
+	assert.Contains(t, cfg.Contexts, "admin@prod")
+}
+
+func TestMergeKubeconfigContexts_PreventsAuthInfoCollision(t *testing.T) {
+	cfg := &config.Config{Contexts: map[string]config.ContextEntry{}}
+	existing := clientcmdapi.NewConfig()
+	initializeKubeconfigMaps(existing)
+
+	// Add first context with auth info named "user"
+	fileA := clientcmdapi.NewConfig()
+	fileA.Contexts["admin@prod"] = &clientcmdapi.Context{Cluster: "prod-cluster", AuthInfo: "user"}
+	fileA.Clusters["prod-cluster"] = &clientcmdapi.Cluster{Server: "https://prod.example.com"}
+	fileA.AuthInfos["user"] = &clientcmdapi.AuthInfo{Token: "prod-token"}
+	mergeKubeconfigContexts(cfg, existing, fileA, []contextRename{{src: "admin@prod", dst: "admin@prod"}})
+
+	// Add second context with auth info also named "user" but different token
+	fileB := clientcmdapi.NewConfig()
+	fileB.Contexts["admin@preprod"] = &clientcmdapi.Context{Cluster: "preprod-cluster", AuthInfo: "user"}
+	fileB.Clusters["preprod-cluster"] = &clientcmdapi.Cluster{Server: "https://preprod.example.com"}
+	fileB.AuthInfos["user"] = &clientcmdapi.AuthInfo{Token: "preprod-token"}
+	mergeKubeconfigContexts(cfg, existing, fileB, []contextRename{{src: "admin@preprod", dst: "admin@preprod"}})
+
+	// Both auth infos should exist independently
+	assert.Equal(t, "prod-token", existing.AuthInfos["admin@prod/user"].Token)
+	assert.Equal(t, "preprod-token", existing.AuthInfos["admin@preprod/user"].Token)
+	// Clusters should also be independent
+	assert.Equal(t, "https://prod.example.com", existing.Clusters["admin@prod/prod-cluster"].Server)
+	assert.Equal(t, "https://preprod.example.com", existing.Clusters["admin@preprod/preprod-cluster"].Server)
+	assert.Len(t, existing.AuthInfos, 2)
+	assert.Len(t, existing.Clusters, 2)
+}
+
+func TestMergeKubeconfigContexts_NestedContextClustersRenames(t *testing.T) {
+	cfg := &config.Config{Contexts: map[string]config.ContextEntry{}}
+	existing := clientcmdapi.NewConfig()
+	initializeKubeconfigMaps(existing)
+
+	src := clientcmdapi.NewConfig()
+	src.CurrentContext = "user@cluster"
+	src.Contexts["user@cluster"] = &clientcmdapi.Context{Cluster: "cluster", AuthInfo: "user"}
+	src.Clusters["cluster"] = &clientcmdapi.Cluster{Server: "https://example.com"}
+	src.AuthInfos["user"] = &clientcmdapi.AuthInfo{Token: "token"}
+
+	// With -n rename
+	mergeKubeconfigContexts(cfg, existing, src, []contextRename{{src: "user@cluster", dst: "my-custom-name"}})
+
+	assert.Equal(t, "my-custom-name/cluster", existing.Contexts["my-custom-name"].Cluster)
+	assert.Equal(t, "my-custom-name/user", existing.Contexts["my-custom-name"].AuthInfo)
+}
+
+func TestMergeKubeconfigContexts_UnprefixedEntryIsNotOverwritten(t *testing.T) {
+	cfg := &config.Config{Contexts: map[string]config.ContextEntry{}}
+	existing := clientcmdapi.NewConfig()
+	initializeKubeconfigMaps(existing)
+
+	// Simulate an existing (legacy) context with unprefixed names
+	existing.Contexts["legacy"] = &clientcmdapi.Context{Cluster: "legacy-cluster", AuthInfo: "legacy-user"}
+	existing.Clusters["legacy-cluster"] = &clientcmdapi.Cluster{Server: "https://legacy.example.com"}
+	existing.AuthInfos["legacy-user"] = &clientcmdapi.AuthInfo{Token: "legacy-token"}
+
+	// Add a new context that has no name collision — should not touch legacy entries
+	src := clientcmdapi.NewConfig()
+	src.Contexts["new"] = &clientcmdapi.Context{Cluster: "new-cluster", AuthInfo: "new-user"}
+	src.Clusters["new-cluster"] = &clientcmdapi.Cluster{Server: "https://new.example.com"}
+	src.AuthInfos["new-user"] = &clientcmdapi.AuthInfo{Token: "new-token"}
+	mergeKubeconfigContexts(cfg, existing, src, []contextRename{{src: "new", dst: "new"}})
+
+	// Legacy entries are untouched
+	assert.Equal(t, "https://legacy.example.com", existing.Clusters["legacy-cluster"].Server)
+	assert.Equal(t, "legacy-token", existing.AuthInfos["legacy-user"].Token)
+}
+
 func TestAdd_DuplicateExistingContextRejected(t *testing.T) {
 	setupTestHome(t)
 	writeTestConfigYAML(t, "keychain: false\ncurrent: alpha\ncontexts:\n  alpha:\n    namespace: default\n")
@@ -318,6 +406,99 @@ func TestAdd_DuplicateExistingContextsInBatchRejected(t *testing.T) {
 	assert.Contains(t, cfg.Contexts, "ctx1")
 	assert.Contains(t, cfg.Contexts, "ctx2")
 	assert.Len(t, cfg.Contexts, 2)
+}
+
+func TestAdd_SameAuthInfoNameNoCollision(t *testing.T) {
+	setupTestHome(t)
+	writeTestConfigYAML(t, "keychain: false\ncurrent: \"\"\ncontexts: {}\n")
+
+	writeFile := func(name, clusterName, server, token string) string {
+		p := filepath.Join(t.TempDir(), name+".yaml")
+		kc := clientcmdapi.NewConfig()
+		kc.CurrentContext = name
+		kc.Contexts[name] = &clientcmdapi.Context{Cluster: clusterName, AuthInfo: "user"} // same auth info name
+		kc.Clusters[clusterName] = &clientcmdapi.Cluster{Server: server}
+		kc.AuthInfos["user"] = &clientcmdapi.AuthInfo{Token: token}
+		data, err := clientcmd.Write(*kc)
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(p, data, 0o600))
+		return p
+	}
+
+	passwordFlag = "test-password"
+	t.Cleanup(func() { passwordFlag = "" })
+
+	// First file — context name is "admin@prod-cluster1"
+	fileA := writeFile("admin@prod-cluster1", "prod-cluster", "https://prod.example.com", "prod-token")
+	err := executeCommand("add", fileA)
+	require.NoError(t, err)
+
+	// Second file — context name is "admin@preprod-cluster1", same auth info name "user"
+	fileB := writeFile("admin@preprod-cluster1", "preprod-cluster", "https://preprod.example.com", "preprod-token")
+	err = executeCommand("add", fileB)
+	require.NoError(t, err)
+
+	// Both contexts should be in config.yaml
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	assert.Contains(t, cfg.Contexts, "admin@prod-cluster1")
+	assert.Contains(t, cfg.Contexts, "admin@preprod-cluster1")
+
+	// Decrypt and verify both auth infos exist independently
+	kubeconfig, err := loadDecryptedKubeconfig("test-password")
+	require.NoError(t, err)
+
+	// Auth infos are prefixed
+	assert.Equal(t, "prod-token", kubeconfig.AuthInfos["admin@prod-cluster1/user"].Token)
+	assert.Equal(t, "preprod-token", kubeconfig.AuthInfos["admin@preprod-cluster1/user"].Token)
+
+	// Clusters are prefixed
+	assert.Equal(t, "https://prod.example.com", kubeconfig.Clusters["admin@prod-cluster1/prod-cluster"].Server)
+	assert.Equal(t, "https://preprod.example.com", kubeconfig.Clusters["admin@preprod-cluster1/preprod-cluster"].Server)
+
+	// Contexts reference the prefixed names
+	assert.Equal(t, "admin@prod-cluster1/prod-cluster", kubeconfig.Contexts["admin@prod-cluster1"].Cluster)
+	assert.Equal(t, "admin@prod-cluster1/user", kubeconfig.Contexts["admin@prod-cluster1"].AuthInfo)
+	assert.Equal(t, "admin@preprod-cluster1/preprod-cluster", kubeconfig.Contexts["admin@preprod-cluster1"].Cluster)
+	assert.Equal(t, "admin@preprod-cluster1/user", kubeconfig.Contexts["admin@preprod-cluster1"].AuthInfo)
+}
+
+func TestAdd_SameClusterNameNoCollision(t *testing.T) {
+	setupTestHome(t)
+	writeTestConfigYAML(t, "keychain: false\ncurrent: \"\"\ncontexts: {}\n")
+
+	writeFile := func(name, server, token string) string {
+		p := filepath.Join(t.TempDir(), name+".yaml")
+		kc := clientcmdapi.NewConfig()
+		kc.CurrentContext = name
+		kc.Contexts[name] = &clientcmdapi.Context{Cluster: "production", AuthInfo: name + "-user"} // same cluster name
+		kc.Clusters["production"] = &clientcmdapi.Cluster{Server: server}
+		kc.AuthInfos[name+"-user"] = &clientcmdapi.AuthInfo{Token: token}
+		data, err := clientcmd.Write(*kc)
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(p, data, 0o600))
+		return p
+	}
+
+	passwordFlag = "test-password"
+	t.Cleanup(func() { passwordFlag = "" })
+
+	// First file — cluster is named "production"
+	fileA := writeFile("us-east", "https://us-east.example.com", "east-token")
+	err := executeCommand("add", fileA)
+	require.NoError(t, err)
+
+	// Second file — same cluster name "production"
+	fileB := writeFile("eu-west", "https://eu-west.example.com", "west-token")
+	err = executeCommand("add", fileB)
+	require.NoError(t, err)
+
+	kubeconfig, err := loadDecryptedKubeconfig("test-password")
+	require.NoError(t, err)
+
+	// Both clusters exist independently
+	assert.Equal(t, "https://us-east.example.com", kubeconfig.Clusters["us-east/production"].Server)
+	assert.Equal(t, "https://eu-west.example.com", kubeconfig.Clusters["eu-west/production"].Server)
 }
 
 func TestConfig_List(t *testing.T) {
