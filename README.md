@@ -67,6 +67,22 @@ ekconf rotate
 ekconf eject
 ```
 
+### Shell completion
+
+For a one-shot zsh session:
+
+```sh
+source <(ekconf completion zsh)
+```
+
+For persistent completion, install the generated script:
+
+```sh
+ekconf completion zsh > ~/.zsh/completions/_ekconf
+```
+
+Then restart your shell or rerun `compinit`.
+
 ### Aliases
 
 Add these to your shell rc file:

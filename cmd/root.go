@@ -47,6 +47,7 @@ func Execute() {
 }
 
 func init() {
+	rootCmd.InitDefaultCompletionCmd()
 	rootCmd.PersistentFlags().StringVar(&passwordFlag, "password", "", "Password for decryption (inline)")
 	rootCmd.PersistentFlags().BoolVar(&passwordStdin, "password-stdin", false, "Read password from stdin")
 }
