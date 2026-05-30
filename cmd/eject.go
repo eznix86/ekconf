@@ -1,30 +1,42 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/eznix86/ekconf/internal/config"
-	"github.com/eznix86/ekconf/internal/crypto"
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
 var ejectForce bool
 
+var openTTY = os.OpenFile
+
 var ejectCmd = &cobra.Command{
 	Use:   "eject [--force]",
 	Short: "Decrypt and write config.enc to ~/.kube/config",
+	Long: `Decrypt the entire encrypted kubeconfig and write it to ~/.kube/config.
+
+This creates a standard plaintext kubeconfig that tools like kubectl can
+use directly. A confirmation prompt is shown unless --force is passed.`,
+	Example: `  ekconf eject
+  ekconf eject --force
+  ekconf eject --password=secret`,
+	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !ejectForce {
-			fmt.Fprint(os.Stderr, "This will write an unencrypted kubeconfig to ~/.kube/config. Continue? [y/N]: ")
-
-			var response string
-			fmt.Scanln(&response)
-			if response != "y" && response != "Y" && response != "yes" && response != "YES" {
-				fmt.Println("Aborted")
-				return nil
+			confirmed, err := promptConfirmation(cmd.ErrOrStderr(), "This will write an unencrypted kubeconfig to ~/.kube/config. Continue? [y/N]: ")
+			if err != nil {
+				return err
+			}
+			if !confirmed {
+				_, err = fmt.Fprintln(cmd.OutOrStdout(), "Aborted")
+				return err
 			}
 		}
 
@@ -33,29 +45,9 @@ var ejectCmd = &cobra.Command{
 			return err
 		}
 
-		encPath, err := config.EncPath()
+		kubeconfig, err := loadDecryptedKubeconfig(password)
 		if err != nil {
 			return err
-		}
-
-		data, err := os.ReadFile(encPath)
-		if err != nil {
-			return fmt.Errorf("read config.enc: %w", err)
-		}
-
-		ef, err := crypto.Unmarshal(data)
-		if err != nil {
-			return fmt.Errorf("parse encrypted file: %w", err)
-		}
-
-		plaintext, err := crypto.Decrypt(ef, password)
-		if err != nil {
-			return fmt.Errorf("decrypt (wrong password?): %w", err)
-		}
-
-		kubeconfig, err := clientcmd.Load(plaintext)
-		if err != nil {
-			return fmt.Errorf("parse kubeconfig: %w", err)
 		}
 
 		cfg, err := config.Load()
@@ -69,6 +61,7 @@ var ejectCmd = &cobra.Command{
 				kubeconfig.CurrentContext = cfg.Current
 			}
 		}
+		// Eject still works if the plaintext index is missing or damaged; the encrypted kubeconfig is authoritative.
 
 		ejectedPlaintext, err := clientcmd.Write(*kubeconfig)
 		if err != nil {
@@ -81,23 +74,44 @@ var ejectCmd = &cobra.Command{
 		}
 
 		kubeDir := filepath.Join(home, ".kube")
-		if err := os.MkdirAll(kubeDir, 0700); err != nil {
+		if err := os.MkdirAll(kubeDir, 0o700); err != nil {
 			return fmt.Errorf("create ~/.kube: %w", err)
 		}
 
 		kubeConfigPath := filepath.Join(kubeDir, "config")
-		if err := os.WriteFile(kubeConfigPath, ejectedPlaintext, 0600); err != nil {
+		if err := os.WriteFile(kubeConfigPath, ejectedPlaintext, 0o600); err != nil {
 			return fmt.Errorf("write ~/.kube/config: %w", err)
 		}
 
-		storePasswordIfNeeded(password)
+		storePasswordIfNeeded(cmd.ErrOrStderr(), password)
 
-		fmt.Printf("Decrypted config written to %s\n", kubeConfigPath)
-		return nil
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Decrypted config written to %s\n", kubeConfigPath)
+		return err
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(ejectCmd)
 	ejectCmd.Flags().BoolVar(&ejectForce, "force", false, "Skip confirmation prompt")
+}
+
+func promptConfirmation(w io.Writer, message string) (bool, error) {
+	tty, err := openTTY("/dev/tty", os.O_RDONLY, 0)
+	if err != nil {
+		return false, fmt.Errorf("prompt confirmation: %w", err)
+	}
+	defer tty.Close()
+
+	fmt.Fprint(w, message)
+	response, err := bufio.NewReader(tty).ReadString('\n')
+	if err != nil {
+		return false, fmt.Errorf("read confirmation: %w", err)
+	}
+
+	switch strings.ToLower(strings.TrimSpace(response)) {
+	case "y", "yes":
+		return true, nil
+	default:
+		return false, nil
+	}
 }

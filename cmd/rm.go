@@ -2,18 +2,22 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/eznix86/ekconf/internal/config"
 	"github.com/eznix86/ekconf/internal/crypto"
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+	"sigs.k8s.io/yaml"
 )
 
 var rmCmd = &cobra.Command{
 	Use:   "rm <name>",
 	Short: "Remove a context from config.enc",
-	Args:  cobra.ExactArgs(1),
+	Long:  `Remove a context and its unreferenced clusters and auth infos from the encrypted kubeconfig.`,
+	Example: `  ekconf rm staging
+  ekconf rm --password=secret prod`,
+	Args:              cobra.ExactArgs(1),
 	ValidArgsFunction: completeContext,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		contextName := args[0]
@@ -28,24 +32,9 @@ var rmCmd = &cobra.Command{
 			return err
 		}
 
-		data, err := os.ReadFile(encPath)
+		kubeconfig, err := loadDecryptedKubeconfig(password)
 		if err != nil {
-			return fmt.Errorf("read config.enc: %w", err)
-		}
-
-		ef, err := crypto.Unmarshal(data)
-		if err != nil {
-			return fmt.Errorf("parse encrypted file: %w", err)
-		}
-
-		plaintext, err := crypto.Decrypt(ef, password)
-		if err != nil {
-			return fmt.Errorf("decrypt (wrong password?): %w", err)
-		}
-
-		kubeconfig, err := clientcmd.Load(plaintext)
-		if err != nil {
-			return fmt.Errorf("parse kubeconfig: %w", err)
+			return err
 		}
 
 		ctx, ok := kubeconfig.Contexts[contextName]
@@ -55,26 +44,21 @@ var rmCmd = &cobra.Command{
 
 		delete(kubeconfig.Contexts, contextName)
 
-		clusterStillUsed := false
-		for _, c := range kubeconfig.Contexts {
-			if c.Cluster == ctx.Cluster {
-				clusterStillUsed = true
-				break
-			}
-		}
-		if !clusterStillUsed {
+		if !clusterInUse(kubeconfig.Contexts, ctx.Cluster) {
 			delete(kubeconfig.Clusters, ctx.Cluster)
 		}
 
-		authStillUsed := false
-		for _, c := range kubeconfig.Contexts {
-			if c.AuthInfo == ctx.AuthInfo {
-				authStillUsed = true
-				break
-			}
-		}
-		if !authStillUsed {
+		if !authInfoInUse(kubeconfig.Contexts, ctx.AuthInfo) {
 			delete(kubeconfig.AuthInfos, ctx.AuthInfo)
+		}
+
+		cfg, err := config.Load()
+		if err != nil {
+			return fmt.Errorf("load config: %w", err)
+		}
+		delete(cfg.Contexts, contextName)
+		if cfg.Current == contextName {
+			cfg.Current = ""
 		}
 
 		mergedData, err := clientcmd.Write(*kubeconfig)
@@ -87,19 +71,46 @@ var rmCmd = &cobra.Command{
 			return fmt.Errorf("encrypt: %w", err)
 		}
 
-		if err := os.WriteFile(encPath, crypto.Marshal(ef2), 0600); err != nil {
-			return fmt.Errorf("write config.enc: %w", err)
+		configPath, err := config.ConfigPath()
+		if err != nil {
+			return err
 		}
 
-		if err := config.RemoveContext(contextName); err != nil {
-			return fmt.Errorf("update config.yaml: %w", err)
+		cfgData, err := yaml.Marshal(cfg)
+		if err != nil {
+			return fmt.Errorf("marshal config.yaml: %w", err)
 		}
 
-		storePasswordIfNeeded(password)
+		if err := replaceFilesAtomically([]fileUpdate{
+			{path: encPath, data: crypto.Marshal(ef2)},
+			{path: configPath, data: cfgData},
+		}); err != nil {
+			return err
+		}
 
-		fmt.Printf("Removed context '%s'\n", contextName)
-		return nil
+		storePasswordIfNeeded(cmd.ErrOrStderr(), password)
+
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Removed context '%s'\n", contextName)
+		return err
 	},
+}
+
+func clusterInUse(contexts map[string]*clientcmdapi.Context, clusterName string) bool {
+	for _, ctx := range contexts {
+		if ctx != nil && ctx.Cluster == clusterName {
+			return true
+		}
+	}
+	return false
+}
+
+func authInfoInUse(contexts map[string]*clientcmdapi.Context, authInfoName string) bool {
+	for _, ctx := range contexts {
+		if ctx != nil && ctx.AuthInfo == authInfoName {
+			return true
+		}
+	}
+	return false
 }
 
 func init() {

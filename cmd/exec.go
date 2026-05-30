@@ -1,13 +1,13 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 
 	"github.com/eznix86/ekconf/internal/config"
-	"github.com/eznix86/ekconf/internal/crypto"
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
@@ -15,16 +15,21 @@ import (
 
 var execNoShell bool
 
-func wipeFile(path string) {
-	data, err := os.OpenFile(path, os.O_WRONLY, 0)
-	if err != nil {
-		return
-	}
-	defer data.Close()
+type execRequest struct {
+	contextName string
+	commandArgs []string
+}
 
-	info, err := data.Stat()
+func wipeFile(path string) error {
+	file, err := os.OpenFile(path, os.O_WRONLY, 0)
 	if err != nil {
-		return
+		return err
+	}
+	defer file.Close()
+
+	info, err := file.Stat()
+	if err != nil {
+		return err
 	}
 
 	size := info.Size()
@@ -35,10 +40,20 @@ func wipeFile(path string) {
 			if rem < int64(len(buf)) {
 				buf = make([]byte, rem)
 			}
-			data.Write(buf)
+			writtenBytes, err := file.Write(buf)
+			if err != nil {
+				return err
+			}
+			if writtenBytes != len(buf) {
+				return fmt.Errorf("wipe file: short write")
+			}
 		}
-		data.Sync()
+		if err := file.Sync(); err != nil {
+			return err
+		}
 	}
+
+	return nil
 }
 
 func tempDir() string {
@@ -51,32 +66,26 @@ func tempDir() string {
 var execCmd = &cobra.Command{
 	Use:   "exec [<name>] -- <cmd>",
 	Short: "Run a command with decrypted config injected via KUBECONFIG",
+	Long: `Run a command with the decrypted kubeconfig for a specific context injected
+via the KUBECONFIG environment variable. The temp file is wiped and deleted
+on exit, even on crash or SIGINT.
+
+If no context name is given, the active context from config.yaml is used.
+Use -- to separate the context name from the command.`,
+	Example: `  ekconf exec -- kubectl get pods
+  ekconf exec staging -- kubectl get pods
+  ekconf exec --no-shell -- sh -c "echo $KUBECONFIG"`,
+	Args:              validateExecArgs,
 	ValidArgsFunction: completeContext,
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) (retErr error) {
 		cfg, err := config.Load()
 		if err != nil {
 			return fmt.Errorf("load config: %w", err)
 		}
 
-		var contextName string
-		var commandArgs []string
-
-		if len(args) >= 1 && cfg.ContextExists(args[0]) {
-			contextName = args[0]
-			commandArgs = args[1:]
-		} else {
-			commandArgs = args
-		}
-
-		if len(commandArgs) == 0 {
-			return fmt.Errorf("no command specified, use: ekconf exec [<name>] -- <cmd>")
-		}
-
-		if contextName == "" {
-			if cfg.Current == "" {
-				return fmt.Errorf("no active context set and no context name provided")
-			}
-			contextName = cfg.Current
+		req, err := parseExecRequest(cmd, cfg, args)
+		if err != nil {
+			return err
 		}
 
 		password, err := resolvePassword()
@@ -84,99 +93,209 @@ var execCmd = &cobra.Command{
 			return err
 		}
 
-		encPath, err := config.EncPath()
+		storePasswordIfNeeded(cmd.ErrOrStderr(), password)
+
+		out, err := decryptedContextKubeconfig(cfg, req.contextName, password)
 		if err != nil {
 			return err
 		}
 
-		data, err := os.ReadFile(encPath)
+		tmpPath, cleanupTemp, err := writeTempKubeconfig(out)
 		if err != nil {
-			return fmt.Errorf("read config.enc: %w", err)
+			return err
 		}
-
-		ef, err := crypto.Unmarshal(data)
-		if err != nil {
-			return fmt.Errorf("parse encrypted file: %w", err)
-		}
-
-		plaintext, err := crypto.Decrypt(ef, password)
-		if err != nil {
-			return fmt.Errorf("decrypt (wrong password?): %w", err)
-		}
-
-		kubeconfig, err := clientcmd.Load(plaintext)
-		if err != nil {
-			return fmt.Errorf("parse kubeconfig: %w", err)
-		}
-
-		if _, ok := kubeconfig.Contexts[contextName]; !ok {
-			return fmt.Errorf("context '%s' not found", contextName)
-		}
-
-		storePasswordIfNeeded(password)
-
-		singleCtx := clientcmdapi.NewConfig()
-		singleCtx.CurrentContext = contextName
-		singleCtx.Contexts[contextName] = kubeconfig.Contexts[contextName]
-		if entry, ok := cfg.Contexts[contextName]; ok && entry.Namespace != "" {
-			ctxCopy := *singleCtx.Contexts[contextName]
-			ctxCopy.Namespace = entry.Namespace
-			singleCtx.Contexts[contextName] = &ctxCopy
-		}
-		singleCtx.Clusters[kubeconfig.Contexts[contextName].Cluster] = kubeconfig.Clusters[kubeconfig.Contexts[contextName].Cluster]
-		singleCtx.AuthInfos[kubeconfig.Contexts[contextName].AuthInfo] = kubeconfig.AuthInfos[kubeconfig.Contexts[contextName].AuthInfo]
-
-		out, err := clientcmd.Write(*singleCtx)
-		if err != nil {
-			return fmt.Errorf("marshal kubeconfig: %w", err)
-		}
-
-		tmpFile, err := os.CreateTemp(tempDir(), "ekconf-*.kubeconfig")
-		if err != nil {
-			return fmt.Errorf("create temp file: %w", err)
-		}
-		tmpPath := tmpFile.Name()
-
 		defer func() {
-			tmpFile.Close()
-			wipeFile(tmpPath)
-			os.Remove(tmpPath)
+			if err := cleanupTemp(); err != nil {
+				if retErr == nil {
+					retErr = fmt.Errorf("cleanup temp kubeconfig: %w", err)
+					return
+				}
+				fmt.Fprintf(cmd.ErrOrStderr(), "Warning: cleanup temp kubeconfig failed: %v\n", err)
+			}
 		}()
 
-		if _, err := tmpFile.Write(out); err != nil {
-			return fmt.Errorf("write temp file: %w", err)
-		}
-		if err := tmpFile.Chmod(0600); err != nil {
-			return fmt.Errorf("chmod temp file: %w", err)
-		}
-		tmpFile.Close()
-
-		var c *exec.Cmd
-		if execNoShell {
-			c = exec.Command(commandArgs[0], commandArgs[1:]...)
-		} else {
-			fullCmd := strings.Join(commandArgs, " ")
-			shell := os.Getenv("SHELL")
-			if shell == "" {
-				c = exec.Command("sh", "-c", fullCmd)
-			} else {
-				c = exec.Command(shell, "-ic", fullCmd)
-			}
-		}
-		c.Env = append(os.Environ(), "KUBECONFIG="+tmpPath)
+		c := buildExecCommand(req.commandArgs, tmpPath)
 		c.Stdin = os.Stdin
 		c.Stdout = os.Stdout
 		c.Stderr = os.Stderr
 
 		if err := c.Run(); err != nil {
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				return fmt.Errorf("command exited with status %d", exitErr.ExitCode())
+			if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+				return &exitCodeError{code: exitErr.ExitCode(), msg: fmt.Sprintf("command exited with status %d", exitErr.ExitCode())}
 			}
 			return fmt.Errorf("execute command: %w", err)
 		}
 
 		return nil
 	},
+}
+
+func parseExecRequest(cmd *cobra.Command, cfg *config.Config, args []string) (execRequest, error) {
+	dash := cmd.Flags().ArgsLenAtDash()
+	if dash == 1 {
+		if !cfg.ContextExists(args[0]) {
+			if cfg.Current == "" {
+				return execRequest{}, fmt.Errorf("no active context set and no context name provided")
+			}
+			return execRequest{}, fmt.Errorf("unknown context: %s", args[0])
+		}
+		return execRequest{contextName: args[0], commandArgs: args[1:]}, nil
+	}
+
+	commandArgs := args
+	contextName := ""
+	if len(args) >= 1 && cfg.ContextExists(args[0]) {
+		contextName = args[0]
+		commandArgs = args[1:]
+	}
+	if len(commandArgs) == 0 {
+		return execRequest{}, fmt.Errorf("no command specified, use: ekconf exec [<name>] -- <cmd>")
+	}
+	if contextName == "" {
+		if cfg.Current == "" {
+			return execRequest{}, fmt.Errorf("no active context set and no context name provided")
+		}
+		contextName = cfg.Current
+	}
+
+	return execRequest{contextName: contextName, commandArgs: commandArgs}, nil
+}
+
+func decryptedContextKubeconfig(cfg *config.Config, contextName, password string) ([]byte, error) {
+	kubeconfig, err := loadDecryptedKubeconfig(password)
+	if err != nil {
+		return nil, err
+	}
+
+	singleCtx, err := singleContextKubeconfig(cfg, kubeconfig, contextName)
+	if err != nil {
+		return nil, err
+	}
+
+	out, err := clientcmd.Write(*singleCtx)
+	if err != nil {
+		return nil, fmt.Errorf("marshal kubeconfig: %w", err)
+	}
+	return out, nil
+}
+
+func singleContextKubeconfig(
+	cfg *config.Config,
+	kubeconfig *clientcmdapi.Config,
+	contextName string,
+) (*clientcmdapi.Config, error) {
+	contextEntry, ok := kubeconfig.Contexts[contextName]
+	if !ok || contextEntry == nil {
+		return nil, fmt.Errorf("context '%s' not found", contextName)
+	}
+	if contextEntry.Cluster == "" {
+		return nil, fmt.Errorf("context '%s' has no cluster", contextName)
+	}
+	cluster, ok := kubeconfig.Clusters[contextEntry.Cluster]
+	if !ok || cluster == nil {
+		return nil, fmt.Errorf("context '%s' references missing cluster '%s'", contextName, contextEntry.Cluster)
+	}
+
+	var authInfo *clientcmdapi.AuthInfo
+	if contextEntry.AuthInfo != "" {
+		authInfo, ok = kubeconfig.AuthInfos[contextEntry.AuthInfo]
+		if !ok || authInfo == nil {
+			return nil, fmt.Errorf("context '%s' references missing user '%s'", contextName, contextEntry.AuthInfo)
+		}
+	}
+
+	singleCtx := clientcmdapi.NewConfig()
+	singleCtx.CurrentContext = contextName
+	singleCtx.Contexts[contextName] = contextEntry
+	if entry, ok := cfg.Contexts[contextName]; ok && entry.Namespace != "" {
+		ctxCopy := *singleCtx.Contexts[contextName]
+		ctxCopy.Namespace = entry.Namespace
+		singleCtx.Contexts[contextName] = &ctxCopy
+	}
+	singleCtx.Clusters[contextEntry.Cluster] = cluster
+	if contextEntry.AuthInfo != "" {
+		singleCtx.AuthInfos[contextEntry.AuthInfo] = authInfo
+	}
+	return singleCtx, nil
+}
+
+func writeTempKubeconfig(data []byte) (string, func() error, error) {
+	tmpFile, err := os.CreateTemp(tempDir(), "ekconf-*.kubeconfig")
+	if err != nil {
+		return "", nil, fmt.Errorf("create temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	cleanup := func() error {
+		if err := wipeFile(tmpPath); err != nil {
+			return err
+		}
+		if err := os.Remove(tmpPath); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+
+	if _, err := tmpFile.Write(data); err != nil {
+		_ = tmpFile.Close()
+		_ = cleanup()
+		return "", nil, fmt.Errorf("write temp file: %w", err)
+	}
+	if err := tmpFile.Chmod(0o600); err != nil {
+		_ = tmpFile.Close()
+		_ = cleanup()
+		return "", nil, fmt.Errorf("chmod temp file: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		_ = cleanup()
+		return "", nil, fmt.Errorf("close temp file: %w", err)
+	}
+
+	return tmpPath, cleanup, nil
+}
+
+func buildExecCommand(commandArgs []string, kubeconfigPath string) *exec.Cmd {
+	var c *exec.Cmd
+	if execNoShell {
+		c = exec.Command(commandArgs[0], commandArgs[1:]...)
+	} else {
+		fullCmd := strings.Join(commandArgs, " ")
+		shell := os.Getenv("SHELL")
+		if shell == "" {
+			c = exec.Command("sh", "-c", fullCmd)
+		} else {
+			c = exec.Command(shell, "-ic", fullCmd)
+		}
+	}
+	c.Env = append(os.Environ(), "KUBECONFIG="+kubeconfigPath)
+	return c
+}
+
+func validateExecArgs(cmd *cobra.Command, args []string) error {
+	dash := cmd.Flags().ArgsLenAtDash()
+	if dash == -1 || dash == 0 {
+		if len(args) == 0 {
+			return fmt.Errorf("no command specified, use: ekconf exec [<name>] -- <cmd>")
+		}
+		return nil
+	}
+	if dash > 1 {
+		return fmt.Errorf("exec accepts at most one context before --")
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+	if cfg.Current == "" && len(cfg.Contexts) == 0 {
+		return nil
+	}
+	if !cfg.ContextExists(args[0]) {
+		return fmt.Errorf("unknown context: %s", args[0])
+	}
+	if len(args) == 1 {
+		return fmt.Errorf("no command specified, use: ekconf exec [<name>] -- <cmd>")
+	}
+	return nil
 }
 
 func init() {
