@@ -207,31 +207,17 @@ commands like `ls` and `use` never need your password.
 
 ### `ekconf import [--force]`
 
-Read `~/.kube/config` and import all contexts into the encrypted store. This
-is the counterpart to `eject` — use it when migrating from a plaintext setup:
-
 ```sh
-# Import and keep the source file
-ekconf import
-
-# Import and remove ~/.kube/config afterwards
-ekconf import --force
+ekconf import          # import and keep the source
+ekconf import --force  # import and remove ~/.kube/config
 ```
 
 ### `ekconf eject [<name>...] [--force]`
 
-Decrypt one or more contexts and write them to `~/.kube/config`. If no names
-are given, all contexts are written. Useful for sharing specific clusters
-with tools that don't support `KUBECONFIG` injection:
-
 ```sh
-# Eject all contexts (original behavior)
-ekconf eject
-ekconf eject --force
-
-# Eject specific contexts
-ekconf eject prod
-ekconf eject staging prod --force
+ekconf eject                  # all contexts
+ekconf eject prod             # single context
+ekconf eject staging prod --force  # multiple, skip prompt
 ```
 
 ## License
