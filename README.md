@@ -47,8 +47,11 @@ ekconf rm my-cluster
 # List all contexts
 ekconf ls
 
-# View a single context's kubeconfig
+# View a single context's kubeconfig (redacted by default)
 ekconf view my-cluster
+
+# Include sensitive auth data
+ekconf view my-cluster --plain
 
 # Switch to a context
 ekconf use my-cluster

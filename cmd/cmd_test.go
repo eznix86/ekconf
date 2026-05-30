@@ -39,16 +39,22 @@ func writeTestConfigEnc(t *testing.T, password string) {
 		AuthInfo: "staging-user",
 	}
 	kc.Clusters["test-cluster"] = &clientcmdapi.Cluster{
-		Server: "https://example.com:6443",
+		Server:                   "https://example.com:6443",
+		CertificateAuthorityData:  []byte("test-ca-data"),
+		CertificateAuthority:      "/tmp/test-ca.crt",
 	}
 	kc.Clusters["staging-cluster"] = &clientcmdapi.Cluster{
-		Server: "https://staging.example.com:6443",
+		Server:                   "https://staging.example.com:6443",
+		CertificateAuthorityData:  []byte("staging-ca-data"),
+		CertificateAuthority:      "/tmp/staging-ca.crt",
 	}
 	kc.AuthInfos["test-user"] = &clientcmdapi.AuthInfo{
 		Username: "admin",
+		Token:    "test-token",
 	}
 	kc.AuthInfos["staging-user"] = &clientcmdapi.AuthInfo{
 		Username: "deploy",
+		Token:    "staging-token",
 	}
 
 	data, err := clientcmd.Write(*kc)
@@ -313,7 +319,44 @@ func TestView_WithPassword(t *testing.T) {
 	cleanup()
 	buf := make([]byte, 4096)
 	n, _ := r.Read(buf)
-	assert.Contains(t, string(buf[:n]), "https://example.com:6443")
+	output := string(buf[:n])
+	assert.Contains(t, output, "current-context: test-cluster")
+	assert.Contains(t, output, "https://example.com:6443")
+	assert.NotContains(t, output, "test-token")
+	assert.NotContains(t, output, "certificate-authority-data:")
+	assert.NotContains(t, output, "staging.example.com")
+	assert.NotContains(t, output, "staging-token")
+	assert.NotContains(t, output, "/tmp/staging-ca.crt")
+}
+
+func TestView_PlainIncludesSensitiveData(t *testing.T) {
+	setupTestHome(t)
+	writeTestConfigYAML(t, "keychain: false\ncurrent: test-cluster\ncontexts:\n  test-cluster:\n    namespace: default\n")
+	writeTestConfigEnc(t, "test-password")
+
+	passwordFlag = "test-password"
+	viewPlain = true
+	t.Cleanup(func() {
+		passwordFlag = ""
+		viewPlain = false
+	})
+
+	r, cleanup := captureOutput(t)
+	defer cleanup()
+
+	err := executeCommand("view", "test-cluster", "--plain")
+	require.NoError(t, err)
+
+	cleanup()
+	buf := make([]byte, 4096)
+	n, _ := r.Read(buf)
+	output := string(buf[:n])
+	assert.Contains(t, output, "current-context: test-cluster")
+	assert.Contains(t, output, "test-token")
+	assert.Contains(t, output, "certificate-authority-data:")
+	assert.NotContains(t, output, "staging.example.com")
+	assert.NotContains(t, output, "staging-token")
+	assert.NotContains(t, output, "/tmp/staging-ca.crt")
 }
 
 func TestView_NonexistentContext(t *testing.T) {
