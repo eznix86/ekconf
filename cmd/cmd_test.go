@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/eznix86/ekconf/internal/config"
@@ -221,6 +222,10 @@ func TestLS_WithContexts(t *testing.T) {
 	assert.Contains(t, got, "prod")
 	assert.Contains(t, got, "staging")
 	assert.Contains(t, got, "* prod")
+	// contexts should be in alphabetical order
+	lines := strings.Split(strings.TrimSpace(got), "\n")
+	assert.Equal(t, "* prod                          namespace: production", strings.TrimSpace(lines[0]))
+	assert.Equal(t, "staging                       namespace: staging", strings.TrimSpace(lines[1]))
 }
 
 func TestUse_Success(t *testing.T) {

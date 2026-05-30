@@ -109,11 +109,7 @@ func completeContext(cmd *cobra.Command, args []string, toComplete string) ([]st
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
-	var names []string
-	for name := range cfg.Contexts {
-		names = append(names, name)
-	}
-	return names, cobra.ShellCompDirectiveNoFileComp
+	return sortedContextNames(cfg), cobra.ShellCompDirectiveNoFileComp
 }
 
 func storePasswordIfNeeded(w io.Writer, pw string) {

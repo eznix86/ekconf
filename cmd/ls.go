@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/eznix86/ekconf/internal/config"
 	"github.com/spf13/cobra"
@@ -9,6 +10,7 @@ import (
 
 var lsCmd = &cobra.Command{
 	Use:     "ls",
+	Aliases: []string{"list"},
 	Short:   "List all contexts",
 	Long:    `List all contexts stored in the encrypted kubeconfig. The active context is marked with *.`,
 	Example: `  ekconf ls`,
@@ -24,7 +26,9 @@ var lsCmd = &cobra.Command{
 			return err
 		}
 
-		for name, entry := range cfg.Contexts {
+		names := sortedContextNames(cfg)
+		for _, name := range names {
+			entry := cfg.Contexts[name]
 			mark := " "
 			if name == cfg.Current {
 				mark = "*"
@@ -42,6 +46,15 @@ var lsCmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+func sortedContextNames(cfg *config.Config) []string {
+	names := make([]string, 0, len(cfg.Contexts))
+	for name := range cfg.Contexts {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 func init() {
