@@ -75,13 +75,13 @@ Use --check to check for updates without installing.`,
 		}
 
 		var (
-			platform   updatePlatform
-			release    *githubRelease
-			assetName  string
-			data       []byte
-			checksums  []byte
-			binary     []byte
-			updateErr  error
+			platform  updatePlatform
+			release   *githubRelease
+			assetName string
+			data      []byte
+			checksums []byte
+			binary    []byte
+			updateErr error
 		)
 
 		if err := spinner.New().Title("Fetching release...").Action(func() {
