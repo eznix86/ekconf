@@ -1,0 +1,46 @@
+version: 2
+
+project_name: ekconf
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: ekconf
+    main: ./main.go
+    binary: ekconf
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/eznix86/ekconf/cmd.version={{ .Version }}
+      - -X github.com/eznix86/ekconf/cmd.commit={{ .Commit }}
+      - -X github.com/eznix86/ekconf/cmd.built={{ .Date }}
+
+archives:
+  - id: default
+    ids:
+      - ekconf
+    formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  disable: true
+
+release:
+  draft: false
+  prerelease: auto
