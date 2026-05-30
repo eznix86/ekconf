@@ -30,21 +30,29 @@ asset="${BIN_NAME}_${VERSION}_${os}_${arch}.tar.gz"
 url="https://github.com/${REPO}/releases/download/v${VERSION}/${asset}"
 checksums_url="https://github.com/${REPO}/releases/download/v${VERSION}/checksums.txt"
 
+echo "ekconf ${VERSION} — ${os}/${arch}"
+echo
+
 mkdir -p "$BIN_DIR"
 
 tmpdir="$(mktemp -d)"
-trap 'rm -rf "$tmpdir"' EXIT
+trap 'echo "Cleaning up..."; rm -rf "$tmpdir"' EXIT
 
-curl -fsSL "$url" -o "$tmpdir/$asset"
+echo "Downloading ${asset}..."
+curl -fL# "$url" -o "$tmpdir/$asset"
+
+echo "Verifying checksum..."
 curl -fsSL "$checksums_url" -o "$tmpdir/checksums.txt"
 tar -xzf "$tmpdir/$asset" -C "$tmpdir"
-
 expected="$(grep "$asset" "$tmpdir/checksums.txt" | awk '{print $1}')"
 actual="$(openssl dgst -sha256 "$tmpdir/$asset" | awk '{print $NF}')"
 if [[ "$expected" != "$actual" ]]; then
 	echo "Checksum mismatch: expected $expected, got $actual" >&2
 	exit 1
 fi
+
+echo "Installing to ${BIN_DIR}/${BIN_NAME}..."
 install -m 0755 "$tmpdir/$BIN_NAME" "$BIN_DIR/$BIN_NAME"
 
-echo "Installed $BIN_NAME to $BIN_DIR/$BIN_NAME"
+echo
+echo "Installed ${BIN_NAME} ${VERSION} to ${BIN_DIR}/${BIN_NAME}"
