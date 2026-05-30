@@ -159,6 +159,10 @@ stern() {
   command ekconf exec --no-shell -- "$(command -v stern)" "$@"
 }
 
+# Custom kubectl wrapper scripts also work
+kubectl() {
+  command ekconf exec --no-shell -- /usr/bin/custom-kubectl.py "$@"
+}
 ```
 
 ## Configuration
