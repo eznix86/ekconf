@@ -11,26 +11,19 @@ d88' `88b  888 .8P'   d88' `"Y8 d88' `88b `888P"Y88b   888
   <p align="center">Encrypted kubeconfig manager.</p>
 </p>
 
-## Description
+<p align="center">
+  <a href="https://github.com/eznix86/ekconf/releases/latest"><img src="https://img.shields.io/github/v/release/eznix86/ekconf" alt="Latest release"></a>
+  <a href="https://github.com/eznix86/ekconf/actions/workflows/lint.yml"><img src="https://img.shields.io/github/actions/workflow/status/eznix86/ekconf/lint.yml?label=lint" alt="Lint"></a>
+  <a href="https://github.com/eznix86/ekconf/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/eznix86/ekconf/release.yml?label=release" alt="Release"></a>
+  <img src="https://img.shields.io/github/go-mod/go-version/eznix86/ekconf" alt="Go version">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/eznix86/ekconf" alt="License"></a>
+</p>
 
-`ekconf` lets you add, remove, list, view, and switch between kubeconfig contexts —
-just like `kconf`. It is inspired by [`particledecay/kconf`](https://github.com/particledecay/kconf).
-The difference: all kubeconfig data is encrypted on disk.
-
-Your configs live in `~/.ekube/config.enc` (AES-256-GCM with Argon2id key derivation).
-A lightweight plaintext index at `~/.ekube/config.yaml` holds just enough metadata
-(context names, namespace) to answer queries without a password.
-
-## Cryptography
-
-`ekconf` uses AES-256-GCM for encryption with Argon2id for key derivation.
-
-When `keychain=true`, passwords are stored using the native macOS Keychain and
-Linux Secret Service backends.
+`kconf` is great — but it stores your kubeconfigs in plaintext. `ekconf` keeps
+them encrypted at rest using AES-256-GCM and Argon2id, with optional macOS
+Keychain and Linux Keyring integration.
 
 ## Installation
-
-Install prebuilt binaries (no Go required):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/eznix86/ekconf/main/install.sh | bash
@@ -42,7 +35,7 @@ Or install a specific version:
 curl -fsSL https://raw.githubusercontent.com/eznix86/ekconf/main/install.sh | bash -s -- 1.2.3
 ```
 
-Or install via Go:
+Or via Go:
 
 ```sh
 go install github.com/eznix86/ekconf@latest
@@ -55,6 +48,25 @@ git clone https://github.com/eznix86/ekconf
 cd ekconf
 go install .
 ```
+
+## Commands
+
+| Command | Description |
+|---|---|
+| `ekconf add <path>` | Encrypt and merge a kubeconfig |
+| `ekconf rm <name>` | Remove a context |
+| `ekconf ls` | List all contexts |
+| `ekconf view <name>` | View a context's kubeconfig (redacted by default) |
+| `ekconf view <name> --plain` | Include sensitive auth data |
+| `ekconf use <name>` | Set the active context |
+| `ekconf ns <namespace>` | Set default namespace on the active context |
+| `ekconf exec [<name>] -- <cmd>` | Run a command with decrypted KUBECONFIG |
+| `ekconf rotate` | Re-encrypt with a new password |
+| `ekconf eject [--force]` | Decrypt and write to `~/.kube/config` |
+| `ekconf config list` | View current configuration |
+| `ekconf config <key=value>` | Set a configuration option |
+| `ekconf update` | Self-update from GitHub Releases |
+| `ekconf update --check` | Check for updates without installing |
 
 ## Usage
 
@@ -69,70 +81,25 @@ ekconf rm my-cluster
 # List all contexts
 ekconf ls
 
-# View a single context's kubeconfig (redacted by default)
-ekconf view my-cluster
-
-# Include sensitive auth data
-ekconf view my-cluster --plain
-
-# Switch to a context
+# Set the active context
 ekconf use my-cluster
 
 # Set default namespace
 ekconf ns my-namespace
 
-# Run a command with decrypted config
+# Run a command with decrypted config injected via KUBECONFIG
 ekconf exec -- kubectl get pods
 ekconf exec staging -- kubectl get pods
-
-# Re-encrypt with a new password
-ekconf rotate
-
-# Self-update from GitHub Releases
-ekconf update
-
-# Decrypt and write back to ~/.kube/config
-ekconf eject
 ```
 
-### Shell completion
+### Password resolution
 
-For a one-shot zsh session:
-
-```sh
-source <(ekconf completion zsh)
-```
-
-For persistent completion, install the generated script:
-
-```sh
-ekconf completion zsh > ~/.zsh/completions/_ekconf
-```
-
-Then restart your shell or rerun `compinit`.
-
-### Aliases
-
-Add these to your shell rc file:
-
-```sh
-alias kconf=ekconf
-alias kubectl="ekconf exec -- kubectl"
-
-# If kubectl is already a function or alias in your shell, wrap the real binary.
-kubectl() {
-  command ekconf exec --no-shell -- "$KUBECTL_BIN" "$@"
-}
-```
-
-## Password Resolution
-
-`ekconf` checks the following in order:
+Checked in order:
 
 1. `--password=<value>` flag
 2. `--password-stdin` flag
 3. `EKCONF_PASSWORD` environment variable
-4. System keychain (if `keychain=true` in config)
+4. System keychain (if `keychain=true`)
 5. Interactive prompt
 
 Enable keychain storage:
@@ -141,12 +108,60 @@ Enable keychain storage:
 ekconf config keychain=true
 ```
 
-## Why?
+### Self-update
 
-`kconf` is great — but it stores your kubeconfigs in plaintext. If you manage
-production clusters, your `~/.kube/config` contains credentials that can unlock
-your infrastructure. `ekconf` keeps those credentials encrypted at rest while
-preserving the same workflow.
+```sh
+ekconf update
+ekconf update --check
+```
+
+### Shell completion
+
+One-shot zsh session:
+
+```sh
+source <(ekconf completion zsh)
+```
+
+Persistent:
+
+```sh
+ekconf completion zsh > ~/.zsh/completions/_ekconf
+```
+
+Then restart your shell or run `compinit`.
+
+### Aliases
+
+```sh
+alias kconf=ekconf
+kubectl() {
+  command ekconf exec --no-shell -- "$(command -v kubectl)" "$@"
+}
+```
+
+## Configuration
+
+```sh
+# View current config
+ekconf config list
+
+# Enable macOS Keychain / Linux Keyring
+ekconf config keychain=true
+
+# Disable keychain
+ekconf config keychain=false
+
+# Colorize YAML output
+ekconf config yaml.colorize=true
+```
+
+## How it works
+
+Your kubeconfig data lives in a single encrypted file at `~/.ekube/config.enc`
+(AES-256-GCM, key derived with Argon2id). A lightweight plaintext index at
+`~/.ekube/config.yaml` holds only metadata (context names, namespaces) so
+commands like `ls` and `use` never need your password.
 
 ## License
 
