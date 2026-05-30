@@ -14,11 +14,19 @@ d88' `88b  888 .8P'   d88' `"Y8 d88' `88b `888P"Y88b   888
 ## Description
 
 `ekconf` lets you add, remove, list, view, and switch between kubeconfig contexts —
-just like `kconf`. The difference: all kubeconfig data is encrypted on disk.
+just like `kconf`. It is inspired by [`particledecay/kconf`](https://github.com/particledecay/kconf).
+The difference: all kubeconfig data is encrypted on disk.
 
 Your configs live in `~/.ekube/config.enc` (AES-256-GCM with Argon2id key derivation).
 A lightweight plaintext index at `~/.ekube/config.yaml` holds just enough metadata
 (context names, namespace) to answer queries without a password.
+
+## Cryptography
+
+`ekconf` uses AES-256-GCM for encryption with Argon2id for key derivation.
+
+When `keychain=true`, passwords are stored using the native macOS Keychain and
+Linux Secret Service backends.
 
 ## Installation
 
@@ -93,6 +101,11 @@ Add these to your shell rc file:
 ```sh
 alias kconf=ekconf
 alias kubectl="ekconf exec -- kubectl"
+
+# If kubectl is already a function or alias in your shell, wrap the real binary.
+kubectl() {
+  command ekconf exec --no-shell -- "$KUBECTL_BIN" "$@"
+}
 ```
 
 ## Password Resolution
