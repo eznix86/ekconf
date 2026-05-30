@@ -38,7 +38,8 @@ trap 'rm -rf "$tmpdir"' EXIT
 curl -fsSL "$url" -o "$tmpdir/$asset"
 curl -fsSL "$checksums_url" -o "$tmpdir/checksums.txt"
 tar -xzf "$tmpdir/$asset" -C "$tmpdir"
-grep "$asset" "$tmpdir/checksums.txt" | (cd "$tmpdir" && shasum -a 256 -c -)
+grep "$asset" "$tmpdir/checksums.txt" > "$tmpdir/checksum.txt"
+(cd "$tmpdir" && shasum -a 256 -c checksum.txt)
 install -m 0755 "$tmpdir/$BIN_NAME" "$BIN_DIR/$BIN_NAME"
 
 echo "Installed $BIN_NAME to $BIN_DIR/$BIN_NAME"
