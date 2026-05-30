@@ -144,7 +144,7 @@ Then restart your shell or run `compinit`.
 ```sh
 alias kconf=ekconf
 
-# plain kconf (original kconf rename to pkconf to manage secured one)
+# plain kconf (original kconf renamed to pkconf to manage plain ones)
 alias pkconf="$(command -v kconf)"
 
 # Use --no-shell for non-interactive tools
