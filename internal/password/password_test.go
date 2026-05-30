@@ -9,49 +9,38 @@ import (
 )
 
 func TestResolve_PasswordFlag(t *testing.T) {
-	pw, err := Resolve("my-password", false, false)
+	pw, err := Resolve("my-password", false, false, "")
 	require.NoError(t, err)
 	assert.Equal(t, "my-password", pw)
 }
 
 func TestResolve_EmptyFlag(t *testing.T) {
-	pw, err := Resolve("", false, false)
-	assert.Error(t, err)
+	pw, err := Resolve("", false, false, "")
+	require.Error(t, err)
 	assert.Empty(t, pw)
 }
 
 func TestResolve_EnvironmentVariable(t *testing.T) {
-	os.Setenv("EKCONF_PASSWORD", "env-password")
-	t.Cleanup(func() { os.Unsetenv("EKCONF_PASSWORD") })
-
-	pw, err := Resolve("", false, false)
+	pw, err := Resolve("", false, false, "env-password")
 	require.NoError(t, err)
 	assert.Equal(t, "env-password", pw)
 }
 
 func TestResolve_FlagOverridesEnv(t *testing.T) {
-	os.Setenv("EKCONF_PASSWORD", "env-password")
-	t.Cleanup(func() { os.Unsetenv("EKCONF_PASSWORD") })
-
-	pw, err := Resolve("flag-password", false, false)
+	pw, err := Resolve("flag-password", false, false, "env-password")
 	require.NoError(t, err)
 	assert.Equal(t, "flag-password", pw)
 }
 
 func TestResolve_EnvOverridesKeychain(t *testing.T) {
-	os.Setenv("EKCONF_PASSWORD", "env-password")
-	t.Cleanup(func() { os.Unsetenv("EKCONF_PASSWORD") })
-
-	pw, err := Resolve("", false, true)
+	pw, err := Resolve("", false, true, "env-password")
 	require.NoError(t, err)
 	assert.Equal(t, "env-password", pw)
 }
 
 func TestResolve_NoSources(t *testing.T) {
-	os.Unsetenv("EKCONF_PASSWORD")
-
-	_, err := Resolve("", false, false)
-	assert.Error(t, err)
+	_, err := Resolve("", false, false, "")
+	require.Error(t, err)
 	assert.ErrorContains(t, err, "not a terminal")
 }
 
@@ -67,7 +56,7 @@ func TestResolve_PasswordStdin(t *testing.T) {
 	os.Stdin = r
 	t.Cleanup(func() { os.Stdin = oldStdin })
 
-	pw, err := Resolve("", true, false)
+	pw, err := Resolve("", true, false, "")
 	require.NoError(t, err)
 	assert.Equal(t, "stdin-password", pw)
 }

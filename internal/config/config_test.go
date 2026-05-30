@@ -12,12 +12,7 @@ import (
 func setupTestDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-
-	origHome := os.Getenv("HOME")
-	os.Setenv("HOME", dir)
-	t.Cleanup(func() {
-		os.Setenv("HOME", origHome)
-	})
+	t.Setenv("HOME", dir)
 
 	return dir
 }
@@ -37,7 +32,7 @@ func TestDir(t *testing.T) {
 	require.NoError(t, err)
 
 	home, _ := os.UserHomeDir()
-	assert.Equal(t, filepath.Join(home, ".ekube"), dir)
+	assert.Equal(t, filepath.Join(home, DirName), dir)
 }
 
 func TestConfigPath(t *testing.T) {
@@ -47,7 +42,7 @@ func TestConfigPath(t *testing.T) {
 	require.NoError(t, err)
 
 	dir, _ := Dir()
-	assert.Equal(t, filepath.Join(dir, "config.yaml"), path)
+	assert.Equal(t, filepath.Join(dir, ConfigFileName), path)
 }
 
 func TestEncPath(t *testing.T) {
@@ -57,7 +52,7 @@ func TestEncPath(t *testing.T) {
 	require.NoError(t, err)
 
 	dir, _ := Dir()
-	assert.Equal(t, filepath.Join(dir, "config.enc"), path)
+	assert.Equal(t, filepath.Join(dir, EncryptedConfigFileName), path)
 }
 
 func TestEnsureDir(t *testing.T) {
@@ -105,8 +100,8 @@ func TestLoad_EmptyFile(t *testing.T) {
 	setupTestDir(t)
 
 	path, _ := ConfigPath()
-	os.MkdirAll(filepath.Dir(path), 0700)
-	os.WriteFile(path, []byte{}, 0600)
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+	require.NoError(t, os.WriteFile(path, []byte{}, 0o600))
 
 	_, err := Load()
 	assert.NoError(t, err)
@@ -159,9 +154,9 @@ func TestAddContext_DefaultNamespace(t *testing.T) {
 func TestRemoveContext(t *testing.T) {
 	setupTestDir(t)
 
-	AddContext("prod", "production")
-	AddContext("staging", "staging")
-	SaveCurrent("prod")
+	require.NoError(t, AddContext("prod", "production"))
+	require.NoError(t, AddContext("staging", "staging"))
+	require.NoError(t, SaveCurrent("prod"))
 
 	err := RemoveContext("prod")
 	require.NoError(t, err)
@@ -176,7 +171,7 @@ func TestRemoveContext(t *testing.T) {
 func TestSaveCurrent(t *testing.T) {
 	setupTestDir(t)
 
-	AddContext("prod", "production")
+	require.NoError(t, AddContext("prod", "production"))
 
 	err := SaveCurrent("prod")
 	require.NoError(t, err)
@@ -189,7 +184,7 @@ func TestSaveCurrent(t *testing.T) {
 func TestSetNamespace(t *testing.T) {
 	setupTestDir(t)
 
-	AddContext("prod", "production")
+	require.NoError(t, AddContext("prod", "production"))
 
 	err := SetNamespace("prod", "staging")
 	require.NoError(t, err)
@@ -210,7 +205,7 @@ func TestAddContext_FilePermissions(t *testing.T) {
 	require.NoError(t, err)
 
 	perm := info.Mode().Perm()
-	assert.Equal(t, os.FileMode(0600), perm, "config.yaml should have 0600 permissions")
+	assert.Equal(t, os.FileMode(0o600), perm, "config.yaml should have 0600 permissions")
 }
 
 func TestEnsureDir_DirPermissions(t *testing.T) {
@@ -224,5 +219,5 @@ func TestEnsureDir_DirPermissions(t *testing.T) {
 	require.NoError(t, err)
 
 	perm := info.Mode().Perm()
-	assert.Equal(t, os.FileMode(0700), perm|0700, "~/.ekube should have at least 0700 permissions")
+	assert.Equal(t, os.FileMode(0o700), perm, "~/.ekube should have 0700 permissions")
 }

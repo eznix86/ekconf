@@ -13,18 +13,17 @@ func TestLoad_InvalidYAML(t *testing.T) {
 	setupTestDir(t)
 
 	path, _ := ConfigPath()
-	os.MkdirAll(filepath.Dir(path), 0700)
-	os.WriteFile(path, []byte("invalid: yaml: [bad"), 0600)
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+	require.NoError(t, os.WriteFile(path, []byte("invalid: yaml: [bad"), 0o600))
 
 	_, err := Load()
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.ErrorContains(t, err, "parse config")
 }
 
 func TestSave_NoDirectory(t *testing.T) {
 	dir := t.TempDir()
-	os.Setenv("HOME", dir)
-	t.Cleanup(func() { os.Unsetenv("HOME") })
+	t.Setenv("HOME", dir)
 
 	cfg := DefaultConfig()
 	cfg.Keychain = true
@@ -32,7 +31,7 @@ func TestSave_NoDirectory(t *testing.T) {
 	err := Save(cfg)
 	require.NoError(t, err)
 
-	_, err = os.Stat(filepath.Join(dir, ".ekube", "config.yaml"))
+	_, err = os.Stat(filepath.Join(dir, DirName, ConfigFileName))
 	assert.NoError(t, err)
 }
 
@@ -65,8 +64,8 @@ func TestSetNamespace_NewContext(t *testing.T) {
 func TestRemoveContext_ClearsCurrent(t *testing.T) {
 	setupTestDir(t)
 
-	AddContext("primary", "default")
-	SaveCurrent("primary")
+	require.NoError(t, AddContext("primary", "default"))
+	require.NoError(t, SaveCurrent("primary"))
 
 	err := RemoveContext("primary")
 	require.NoError(t, err)
@@ -84,7 +83,7 @@ func TestRemoveContext_NonExistent(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestMultipleContextsConcurrent(t *testing.T) {
+func TestMultipleContextsSequential(t *testing.T) {
 	setupTestDir(t)
 
 	names := []string{"ctx-a", "ctx-b", "ctx-c", "ctx-d", "ctx-e"}
@@ -103,7 +102,7 @@ func TestMultipleContextsConcurrent(t *testing.T) {
 	}
 
 	for _, name := range names[:3] {
-		RemoveContext(name)
+		require.NoError(t, RemoveContext(name))
 	}
 
 	cfg, err = Load()
@@ -118,7 +117,7 @@ func TestConfigPath_RespectsHome(t *testing.T) {
 
 	path, err := ConfigPath()
 	require.NoError(t, err)
-	assert.Equal(t, filepath.Join(dir, ".ekube", "config.yaml"), path)
+	assert.Equal(t, filepath.Join(dir, DirName, ConfigFileName), path)
 }
 
 func TestEncPath_RespectsHome(t *testing.T) {
@@ -126,5 +125,5 @@ func TestEncPath_RespectsHome(t *testing.T) {
 
 	path, err := EncPath()
 	require.NoError(t, err)
-	assert.Equal(t, filepath.Join(dir, ".ekube", "config.enc"), path)
+	assert.Equal(t, filepath.Join(dir, DirName, EncryptedConfigFileName), path)
 }

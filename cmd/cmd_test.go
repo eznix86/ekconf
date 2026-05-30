@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/eznix86/ekconf/internal/config"
 	"github.com/eznix86/ekconf/internal/crypto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -14,16 +16,43 @@ import (
 
 func setupTestHome(t *testing.T) string {
 	t.Helper()
+	resetCommandTestState(t)
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 	return dir
 }
 
+func resetCommandTestState(t *testing.T) {
+	t.Helper()
+	passwordFlag = ""
+	passwordStdin = false
+	envPassword = ""
+	addName = ""
+	viewPlain = false
+	ejectForce = false
+	execNoShell = false
+	rootCmd.SetArgs(nil)
+	rootCmd.SetOut(os.Stdout)
+	rootCmd.SetErr(os.Stderr)
+	t.Cleanup(func() {
+		passwordFlag = ""
+		passwordStdin = false
+		envPassword = ""
+		addName = ""
+		viewPlain = false
+		ejectForce = false
+		execNoShell = false
+		rootCmd.SetArgs(nil)
+		rootCmd.SetOut(os.Stdout)
+		rootCmd.SetErr(os.Stderr)
+	})
+}
+
 func writeTestConfigYAML(t *testing.T, content string) {
 	t.Helper()
 	path := filepath.Join(os.Getenv("HOME"), ".ekube", "config.yaml")
-	os.MkdirAll(filepath.Dir(path), 0700)
-	os.WriteFile(path, []byte(content), 0600)
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
 }
 
 func writeTestConfigEnc(t *testing.T, password string) {
@@ -40,13 +69,13 @@ func writeTestConfigEnc(t *testing.T, password string) {
 	}
 	kc.Clusters["test-cluster"] = &clientcmdapi.Cluster{
 		Server:                   "https://example.com:6443",
-		CertificateAuthorityData:  []byte("test-ca-data"),
-		CertificateAuthority:      "/tmp/test-ca.crt",
+		CertificateAuthorityData: []byte("test-ca-data"),
+		CertificateAuthority:     "/tmp/test-ca.crt",
 	}
 	kc.Clusters["staging-cluster"] = &clientcmdapi.Cluster{
 		Server:                   "https://staging.example.com:6443",
-		CertificateAuthorityData:  []byte("staging-ca-data"),
-		CertificateAuthority:      "/tmp/staging-ca.crt",
+		CertificateAuthorityData: []byte("staging-ca-data"),
+		CertificateAuthority:     "/tmp/staging-ca.crt",
 	}
 	kc.AuthInfos["test-user"] = &clientcmdapi.AuthInfo{
 		Username: "admin",
@@ -64,26 +93,34 @@ func writeTestConfigEnc(t *testing.T, password string) {
 	require.NoError(t, err)
 
 	encPath := filepath.Join(os.Getenv("HOME"), ".ekube", "config.enc")
-	os.MkdirAll(filepath.Dir(encPath), 0700)
-	os.WriteFile(encPath, crypto.Marshal(ef), 0600)
+	require.NoError(t, os.MkdirAll(filepath.Dir(encPath), 0o700))
+	require.NoError(t, os.WriteFile(encPath, crypto.Marshal(ef), 0o600))
 }
 
 func executeCommand(args ...string) error {
+	_ = execCmd.Flags().Parse(nil)
 	rootCmd.SetArgs(args)
+	defer rootCmd.SetArgs(nil)
 	return rootCmd.Execute()
 }
 
-func captureOutput(t *testing.T) (*os.File, func()) {
+func captureOutput(t *testing.T) func() string {
 	t.Helper()
 	r, w, err := os.Pipe()
 	require.NoError(t, err)
 
 	old := os.Stdout
 	os.Stdout = w
+	rootCmd.SetOut(w)
 
-	return r, func() {
-		w.Close()
+	return func() string {
+		require.NoError(t, w.Close())
 		os.Stdout = old
+		rootCmd.SetOut(old)
+		data, err := io.ReadAll(r)
+		require.NoError(t, err)
+		require.NoError(t, r.Close())
+		return string(data)
 	}
 }
 
@@ -105,9 +142,10 @@ func TestTempDir_ShmPreferred(t *testing.T) {
 func TestWipeFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "secret.txt")
-	os.WriteFile(path, []byte("sensitive-data-here"), 0600)
+	require.NoError(t, os.WriteFile(path, []byte("sensitive-data-here"), 0o600))
 
-	wipeFile(path)
+	err := wipeFile(path)
+	require.NoError(t, err)
 
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
@@ -117,19 +155,17 @@ func TestWipeFile(t *testing.T) {
 }
 
 func TestWipeFile_Nonexistent(t *testing.T) {
-	assert.NotPanics(t, func() {
-		wipeFile("/nonexistent/path")
-	})
+	err := wipeFile("/nonexistent/path")
+	require.Error(t, err)
 }
 
 func TestWipeFile_EmptyFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "empty.txt")
-	os.WriteFile(path, []byte{}, 0600)
+	require.NoError(t, os.WriteFile(path, []byte{}, 0o600))
 
-	assert.NotPanics(t, func() {
-		wipeFile(path)
-	})
+	err := wipeFile(path)
+	require.NoError(t, err)
 }
 
 func TestShouldUseKeychain_Enabled(t *testing.T) {
@@ -164,51 +200,39 @@ func TestLS_NoContexts(t *testing.T) {
 	setupTestHome(t)
 	writeTestConfigYAML(t, "keychain: false\ncurrent: \"\"\ncontexts: {}\n")
 
-	r, cleanup := captureOutput(t)
-	defer cleanup()
+	output := captureOutput(t)
 
 	err := executeCommand("ls")
 	require.NoError(t, err)
 
-	cleanup()
-	buf := make([]byte, 1024)
-	n, _ := r.Read(buf)
-	assert.Contains(t, string(buf[:n]), "No contexts found")
+	assert.Contains(t, output(), "No contexts found")
 }
 
 func TestLS_WithContexts(t *testing.T) {
 	setupTestHome(t)
 	writeTestConfigYAML(t, "keychain: false\ncurrent: prod\ncontexts:\n  prod:\n    namespace: production\n  staging:\n    namespace: staging\n")
 
-	r, cleanup := captureOutput(t)
-	defer cleanup()
+	output := captureOutput(t)
 
 	err := executeCommand("ls")
 	require.NoError(t, err)
 
-	cleanup()
-	buf := make([]byte, 4096)
-	n, _ := r.Read(buf)
-	output := string(buf[:n])
-	assert.Contains(t, output, "prod")
-	assert.Contains(t, output, "staging")
-	assert.Contains(t, output, "* prod")
+	got := output()
+	assert.Contains(t, got, "prod")
+	assert.Contains(t, got, "staging")
+	assert.Contains(t, got, "* prod")
 }
 
 func TestUse_Success(t *testing.T) {
 	setupTestHome(t)
 	writeTestConfigYAML(t, "keychain: false\ncurrent: staging\ncontexts:\n  staging:\n    namespace: staging\n  prod:\n    namespace: production\n")
 
-	r, cleanup := captureOutput(t)
-	defer cleanup()
+	output := captureOutput(t)
 
 	err := executeCommand("use", "prod")
 	require.NoError(t, err)
 
-	cleanup()
-	buf := make([]byte, 1024)
-	n, _ := r.Read(buf)
-	assert.Contains(t, string(buf[:n]), "Switched to context 'prod'")
+	assert.Contains(t, output(), "Switched to context 'prod'")
 }
 
 func TestUse_NotFound(t *testing.T) {
@@ -216,7 +240,7 @@ func TestUse_NotFound(t *testing.T) {
 	writeTestConfigYAML(t, "keychain: false\ncurrent: \"\"\ncontexts: {}\n")
 
 	err := executeCommand("use", "nonexistent")
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.ErrorContains(t, err, "not found")
 }
 
@@ -224,16 +248,12 @@ func TestNS_Success(t *testing.T) {
 	setupTestHome(t)
 	writeTestConfigYAML(t, "keychain: false\ncurrent: prod\ncontexts:\n  prod:\n    namespace: production\n")
 
-	r, cleanup := captureOutput(t)
-	defer cleanup()
+	output := captureOutput(t)
 
 	err := executeCommand("ns", "staging")
 	require.NoError(t, err)
 
-	cleanup()
-	buf := make([]byte, 1024)
-	n, _ := r.Read(buf)
-	assert.Contains(t, string(buf[:n]), "Set namespace 'staging' on context 'prod'")
+	assert.Contains(t, output(), "Set namespace 'staging' on context 'prod'")
 }
 
 func TestNS_NoActiveContext(t *testing.T) {
@@ -241,26 +261,77 @@ func TestNS_NoActiveContext(t *testing.T) {
 	writeTestConfigYAML(t, "keychain: false\ncurrent: \"\"\ncontexts: {}\n")
 
 	err := executeCommand("ns", "default")
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.ErrorContains(t, err, "no active context set")
+}
+
+func TestAdd_DuplicateExistingContextRejected(t *testing.T) {
+	setupTestHome(t)
+	writeTestConfigYAML(t, "keychain: false\ncurrent: alpha\ncontexts:\n  alpha:\n    namespace: default\n")
+
+	src := filepath.Join(t.TempDir(), "source.yaml")
+	kc := clientcmdapi.NewConfig()
+	kc.CurrentContext = "alpha"
+	kc.Contexts["alpha"] = &clientcmdapi.Context{Cluster: "alpha-cluster", AuthInfo: "alpha-user"}
+	kc.Clusters["alpha-cluster"] = &clientcmdapi.Cluster{Server: "https://alpha.example.com"}
+	kc.AuthInfos["alpha-user"] = &clientcmdapi.AuthInfo{Username: "alpha"}
+	data, err := clientcmd.Write(*kc)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(src, data, 0o600))
+
+	passwordFlag = "test-password"
+	t.Cleanup(func() { passwordFlag = "" })
+	err = executeCommand("add", src)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "already exists")
+
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	assert.Contains(t, cfg.Contexts, "alpha")
+	assert.Len(t, cfg.Contexts, 1)
+}
+
+func TestAdd_DuplicateExistingContextsInBatchRejected(t *testing.T) {
+	setupTestHome(t)
+	writeTestConfigYAML(t, "keychain: false\ncurrent: ctx1\ncontexts:\n  ctx1:\n    namespace: default\n  ctx2:\n    namespace: default\n")
+
+	src := filepath.Join(t.TempDir(), "source.yaml")
+	kc := clientcmdapi.NewConfig()
+	kc.Contexts["ctx1"] = &clientcmdapi.Context{Cluster: "cluster1", AuthInfo: "user1", Namespace: "ns1"}
+	kc.Contexts["ctx2"] = &clientcmdapi.Context{Cluster: "cluster2", AuthInfo: "user2", Namespace: "ns2"}
+	kc.Clusters["cluster1"] = &clientcmdapi.Cluster{Server: "https://one.example.com"}
+	kc.Clusters["cluster2"] = &clientcmdapi.Cluster{Server: "https://two.example.com"}
+	kc.AuthInfos["user1"] = &clientcmdapi.AuthInfo{Username: "one"}
+	kc.AuthInfos["user2"] = &clientcmdapi.AuthInfo{Username: "two"}
+	data, err := clientcmd.Write(*kc)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(src, data, 0o600))
+
+	passwordFlag = "test-password"
+	t.Cleanup(func() { passwordFlag = "" })
+	err = executeCommand("add", src)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "already exists")
+
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	assert.Contains(t, cfg.Contexts, "ctx1")
+	assert.Contains(t, cfg.Contexts, "ctx2")
+	assert.Len(t, cfg.Contexts, 2)
 }
 
 func TestConfig_List(t *testing.T) {
 	setupTestHome(t)
 	writeTestConfigYAML(t, "keychain: false\ncurrent: prod\ncontexts:\n  prod:\n    namespace: production\n")
 
-	r, cleanup := captureOutput(t)
-	defer cleanup()
+	output := captureOutput(t)
 
 	err := executeCommand("config", "list")
 	require.NoError(t, err)
 
-	cleanup()
-	buf := make([]byte, 1024)
-	n, _ := r.Read(buf)
-	output := string(buf[:n])
-	assert.Contains(t, output, "keychain: false")
-	assert.Contains(t, output, "current: prod")
+	got := output()
+	assert.Contains(t, got, "keychain: false")
+	assert.Contains(t, got, "current: prod")
 }
 
 func TestConfig_SetKeychain(t *testing.T) {
@@ -269,36 +340,32 @@ func TestConfig_SetKeychain(t *testing.T) {
 	err := executeCommand("config", "keychain=true")
 	require.NoError(t, err)
 
-	r, cleanup := captureOutput(t)
-	defer cleanup()
+	output := captureOutput(t)
 
 	err = executeCommand("config", "list")
 	require.NoError(t, err)
 
-	cleanup()
-	buf := make([]byte, 1024)
-	n, _ := r.Read(buf)
-	assert.Contains(t, string(buf[:n]), "keychain: true")
+	assert.Contains(t, output(), "keychain: true")
 }
 
 func TestConfig_InvalidKey(t *testing.T) {
 	setupTestHome(t)
 	err := executeCommand("config", "invalid=value")
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.ErrorContains(t, err, "unknown config key")
 }
 
 func TestConfig_InvalidFormat(t *testing.T) {
 	setupTestHome(t)
 	err := executeCommand("config", "badformat")
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.ErrorContains(t, err, "expected key=value")
 }
 
 func TestConfig_InvalidKeychainValue(t *testing.T) {
 	setupTestHome(t)
 	err := executeCommand("config", "keychain=invalid")
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.ErrorContains(t, err, "keychain must be 'true' or 'false'")
 }
 
@@ -310,23 +377,19 @@ func TestView_WithPassword(t *testing.T) {
 	passwordFlag = "test-password"
 	t.Cleanup(func() { passwordFlag = "" })
 
-	r, cleanup := captureOutput(t)
-	defer cleanup()
+	output := captureOutput(t)
 
 	err := executeCommand("view", "test-cluster")
 	require.NoError(t, err)
 
-	cleanup()
-	buf := make([]byte, 4096)
-	n, _ := r.Read(buf)
-	output := string(buf[:n])
-	assert.Contains(t, output, "current-context: test-cluster")
-	assert.Contains(t, output, "https://example.com:6443")
-	assert.NotContains(t, output, "test-token")
-	assert.NotContains(t, output, "certificate-authority-data:")
-	assert.NotContains(t, output, "staging.example.com")
-	assert.NotContains(t, output, "staging-token")
-	assert.NotContains(t, output, "/tmp/staging-ca.crt")
+	got := output()
+	assert.Contains(t, got, "current-context: test-cluster")
+	assert.Contains(t, got, "https://example.com:6443")
+	assert.NotContains(t, got, "test-token")
+	assert.NotContains(t, got, "certificate-authority-data:")
+	assert.NotContains(t, got, "staging.example.com")
+	assert.NotContains(t, got, "staging-token")
+	assert.NotContains(t, got, "/tmp/staging-ca.crt")
 }
 
 func TestView_PlainIncludesSensitiveData(t *testing.T) {
@@ -341,22 +404,18 @@ func TestView_PlainIncludesSensitiveData(t *testing.T) {
 		viewPlain = false
 	})
 
-	r, cleanup := captureOutput(t)
-	defer cleanup()
+	output := captureOutput(t)
 
 	err := executeCommand("view", "test-cluster", "--plain")
 	require.NoError(t, err)
 
-	cleanup()
-	buf := make([]byte, 4096)
-	n, _ := r.Read(buf)
-	output := string(buf[:n])
-	assert.Contains(t, output, "current-context: test-cluster")
-	assert.Contains(t, output, "test-token")
-	assert.Contains(t, output, "certificate-authority-data:")
-	assert.NotContains(t, output, "staging.example.com")
-	assert.NotContains(t, output, "staging-token")
-	assert.NotContains(t, output, "/tmp/staging-ca.crt")
+	got := output()
+	assert.Contains(t, got, "current-context: test-cluster")
+	assert.Contains(t, got, "test-token")
+	assert.Contains(t, got, "certificate-authority-data:")
+	assert.NotContains(t, got, "staging.example.com")
+	assert.NotContains(t, got, "staging-token")
+	assert.NotContains(t, got, "/tmp/staging-ca.crt")
 }
 
 func TestView_NonexistentContext(t *testing.T) {
@@ -368,7 +427,7 @@ func TestView_NonexistentContext(t *testing.T) {
 	t.Cleanup(func() { passwordFlag = "" })
 
 	err := executeCommand("view", "missing-cluster")
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.ErrorContains(t, err, "not found")
 }
 
@@ -403,15 +462,33 @@ func TestEject_NoEncryptedFile(t *testing.T) {
 	})
 
 	err := executeCommand("eject", "--force")
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.ErrorContains(t, err, "read config.enc")
+}
+
+func TestPromptConfirmation_FromTTY(t *testing.T) {
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	_, err = w.WriteString("yes\n")
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
+	oldOpenTTY := openTTY
+	openTTY = func(name string, flag int, perm os.FileMode) (*os.File, error) {
+		return r, nil
+	}
+	t.Cleanup(func() { openTTY = oldOpenTTY })
+
+	ok, err := promptConfirmation(io.Discard, "Continue? [y/N]: ")
+	require.NoError(t, err)
+	assert.True(t, ok)
 }
 
 func TestExec_NoCommand(t *testing.T) {
 	setupTestHome(t)
 
 	err := executeCommand("exec")
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.ErrorContains(t, err, "no command specified")
 }
 
@@ -423,16 +500,12 @@ func TestExec_WithPasswordFlag(t *testing.T) {
 	passwordFlag = "test-password"
 	t.Cleanup(func() { passwordFlag = "" })
 
-	r, cleanup := captureOutput(t)
-	defer cleanup()
+	output := captureOutput(t)
 
 	err := executeCommand("exec", "echo", "hello-from-ekconf")
 	require.NoError(t, err)
 
-	cleanup()
-	buf := make([]byte, 1024)
-	n, _ := r.Read(buf)
-	assert.Contains(t, string(buf[:n]), "hello-from-ekconf")
+	assert.Contains(t, output(), "hello-from-ekconf")
 }
 
 func TestExec_SpecificContext(t *testing.T) {
@@ -443,16 +516,21 @@ func TestExec_SpecificContext(t *testing.T) {
 	passwordFlag = "test-password"
 	t.Cleanup(func() { passwordFlag = "" })
 
-	r, cleanup := captureOutput(t)
-	defer cleanup()
+	output := captureOutput(t)
 
 	err := executeCommand("exec", "staging", "--", "echo", "staging-context")
 	require.NoError(t, err)
 
-	cleanup()
-	buf := make([]byte, 1024)
-	n, _ := r.Read(buf)
-	assert.Contains(t, string(buf[:n]), "staging-context")
+	assert.Contains(t, output(), "staging-context")
+}
+
+func TestExec_UnknownExplicitContext(t *testing.T) {
+	setupTestHome(t)
+	writeTestConfigYAML(t, "keychain: false\ncurrent: test-cluster\ncontexts:\n  test-cluster:\n    namespace: default\n")
+
+	err := executeCommand("exec", "missing", "--", "echo", "hi")
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "unknown context: missing")
 }
 
 func TestExec_NoActiveContext(t *testing.T) {
@@ -463,28 +541,43 @@ func TestExec_NoActiveContext(t *testing.T) {
 	t.Cleanup(func() { passwordFlag = "" })
 
 	err := executeCommand("exec", "echo", "hi")
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.ErrorContains(t, err, "no active context set")
 }
 
+func TestExec_PreservesChildExitCode(t *testing.T) {
+	setupTestHome(t)
+	writeTestConfigYAML(t, "keychain: false\ncurrent: test-cluster\ncontexts:\n  test-cluster:\n    namespace: default\n")
+	writeTestConfigEnc(t, "test-password")
+
+	passwordFlag = "test-password"
+	t.Cleanup(func() { passwordFlag = "" })
+
+	err := executeCommand("exec", "--no-shell", "--", "sh", "-c", "exit 7")
+	require.Error(t, err)
+	if exitErr, ok := err.(interface{ ExitCode() int }); ok {
+		assert.Equal(t, 7, exitErr.ExitCode())
+	} else {
+		t.Fatalf("expected exit code error, got %T", err)
+	}
+}
+
 func TestRootHelp(t *testing.T) {
-	r, cleanup := captureOutput(t)
-	defer cleanup()
+	resetCommandTestState(t)
+	output := captureOutput(t)
 
 	err := executeCommand("--help")
 	require.NoError(t, err)
 
-	cleanup()
-	buf := make([]byte, 4096)
-	n, _ := r.Read(buf)
-	assert.Contains(t, string(buf[:n]), "ekconf")
-	assert.Contains(t, string(buf[:n]), "add")
-	assert.Contains(t, string(buf[:n]), "rm")
-	assert.Contains(t, string(buf[:n]), "ls")
-	assert.Contains(t, string(buf[:n]), "view")
-	assert.Contains(t, string(buf[:n]), "use")
-	assert.Contains(t, string(buf[:n]), "ns")
-	assert.Contains(t, string(buf[:n]), "exec")
-	assert.Contains(t, string(buf[:n]), "eject")
-	assert.Contains(t, string(buf[:n]), "config")
+	got := output()
+	assert.Contains(t, got, "ekconf")
+	assert.Contains(t, got, "add")
+	assert.Contains(t, got, "rm")
+	assert.Contains(t, got, "ls")
+	assert.Contains(t, got, "view")
+	assert.Contains(t, got, "use")
+	assert.Contains(t, got, "ns")
+	assert.Contains(t, got, "exec")
+	assert.Contains(t, got, "eject")
+	assert.Contains(t, got, "config")
 }

@@ -9,8 +9,8 @@ import (
 
 func TestEncryptDecrypt_RoundTrip(t *testing.T) {
 	tests := []struct {
-		name     string
-		password string
+		name      string
+		password  string
 		plaintext string
 	}{
 		{
@@ -74,7 +74,7 @@ func TestDecrypt_WrongPassword(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = Decrypt(ef, "wrong-password")
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.ErrorContains(t, err, "decrypt")
 }
 
@@ -85,7 +85,7 @@ func TestDecrypt_TamperedCiphertext(t *testing.T) {
 	ef.Ciphertext[0] ^= 0xFF
 
 	_, err = Decrypt(ef, "password")
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.ErrorContains(t, err, "decrypt")
 }
 
@@ -121,7 +121,7 @@ func TestUnmarshal_ShortData(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := Unmarshal(tt.data)
-			assert.Error(t, err)
+			require.Error(t, err)
 			assert.ErrorContains(t, err, "too short")
 		})
 	}
