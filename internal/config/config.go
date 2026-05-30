@@ -16,6 +16,11 @@ type Config struct {
 	Keychain bool                    `json:"keychain"`
 	Current  string                  `json:"current,omitempty"`
 	Contexts map[string]ContextEntry `json:"contexts,omitempty"`
+	YAML     *YAMLConfig             `json:"yaml,omitempty"`
+}
+
+type YAMLConfig struct {
+	Colorize bool `json:"colorize"`
 }
 
 func DefaultConfig() *Config {
