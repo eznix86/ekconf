@@ -91,7 +91,7 @@ ekconf ns my-namespace
 
 # Run a command with decrypted config injected via KUBECONFIG
 # Respects shell aliases and functions. It's a drop-in replacement
-# for your normal shell (e.g. alias kubectl=kubecolor works)
+# for your normal shell (e.g. alias kubectl=kubecolor, k=kubectl)
 ekconf exec -- kubectl get pods
 ekconf exec staging -- kubectl get pods
 ```
