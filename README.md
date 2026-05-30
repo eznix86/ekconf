@@ -205,14 +205,14 @@ Your kubeconfig data lives in a single encrypted file at `~/.ekube/config.enc`
 `~/.ekube/config.yaml` holds only metadata (context names, namespaces) so
 commands like `ls` and `use` never need your password.
 
-### `ekconf import [--force]`
+##### `ekconf import [--force]`
 
 ```sh
 ekconf import          # import and keep the source
 ekconf import --force  # import and remove ~/.kube/config
 ```
 
-### `ekconf eject [<name>...] [--force]`
+##### `ekconf eject [<name>...] [--force]`
 
 ```sh
 ekconf eject                  # all contexts
