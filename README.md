@@ -162,7 +162,7 @@ ekconf config yaml.colorize=true
 ## How it works
 
 Your kubeconfig data lives in a single encrypted file at `~/.ekube/config.enc`
-(AES-256-GCM, key derived with Argon2id). A lightweight plaintext index at
+(AES-256-GCM, key derived with Argon2id). An index at
 `~/.ekube/config.yaml` holds only metadata (context names, namespaces) so
 commands like `ls` and `use` never need your password.
 
