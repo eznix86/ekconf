@@ -49,6 +49,7 @@ Or build from source:
 git clone https://github.com/eznix86/ekconf
 cd ekconf
 go install .
+```
 
 ## Getting started
 
