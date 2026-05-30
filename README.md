@@ -56,15 +56,16 @@ go install .
 | Command | Description |
 |---|---|
 | `ekconf add <path>` | Encrypt and merge a kubeconfig |
-| `ekconf rm <name>` | Remove a context |
-| `ekconf ls` | List all contexts |
+| `ekconf rm <name> [<name>...]` | Remove one or more contexts |
+| `ekconf ls` | List all contexts (alphabetical) |
 | `ekconf view <name>` | View a context's kubeconfig (redacted by default) |
 | `ekconf view <name> --plain` | Include sensitive auth data |
 | `ekconf use <name>` | Set the active context |
 | `ekconf ns <namespace>` | Set default namespace on the active context |
 | `ekconf exec [<name>] -- <cmd>` | Run a command with decrypted KUBECONFIG |
 | `ekconf rotate` | Re-encrypt with a new password |
-| `ekconf eject [--force]` | Decrypt and write to `~/.kube/config` |
+| `ekconf import [--force]` | Import `~/.kube/config` into the encrypted store |
+| `ekconf eject [<name>...] [--force]` | Decrypt and write to `~/.kube/config` |
 | `ekconf config list` | View configuration (colorized with` yaml.colorize=true`) |
 | `ekconf config <key=value>` | Set a configuration option |
 | `ekconf update` | Self-update from GitHub Releases |
@@ -192,6 +193,35 @@ Your kubeconfig data lives in a single encrypted file at `~/.ekube/config.enc`
 (AES-256-GCM, key derived with Argon2id). An index at
 `~/.ekube/config.yaml` holds only metadata (context names, namespaces) so
 commands like `ls` and `use` never need your password.
+
+### `ekconf import [--force]`
+
+Read `~/.kube/config` and import all contexts into the encrypted store. This
+is the counterpart to `eject` — use it when migrating from a plaintext setup:
+
+```sh
+# Import and keep the source file
+ekconf import
+
+# Import and remove ~/.kube/config afterwards
+ekconf import --force
+```
+
+### `ekconf eject [<name>...] [--force]`
+
+Decrypt one or more contexts and write them to `~/.kube/config`. If no names
+are given, all contexts are written. Useful for sharing specific clusters
+with tools that don't support `KUBECONFIG` injection:
+
+```sh
+# Eject all contexts (original behavior)
+ekconf eject
+ekconf eject --force
+
+# Eject specific contexts
+ekconf eject prod
+ekconf eject staging prod --force
+```
 
 ## License
 
