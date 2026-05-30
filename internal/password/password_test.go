@@ -69,5 +69,5 @@ func TestResolve_PasswordStdin(t *testing.T) {
 
 	pw, err := Resolve("", true, false)
 	require.NoError(t, err)
-	assert.Equal(t, "stdin-password\n", pw)
+	assert.Equal(t, "stdin-password", pw)
 }

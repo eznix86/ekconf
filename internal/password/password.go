@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"golang.org/x/term"
 
@@ -22,7 +23,7 @@ func Resolve(passwordFlag string, passwordStdin bool, useKeychain bool) (string,
 		if err != nil {
 			return "", fmt.Errorf("read stdin: %w", err)
 		}
-		return string(data), nil
+		return strings.TrimRight(string(data), "\r\n"), nil
 	}
 
 	if env := os.Getenv("EKCONF_PASSWORD"); env != "" {
@@ -48,13 +49,14 @@ func Delete() error {
 }
 
 func promptPassword() (string, error) {
-	fd := int(os.Stdin.Fd())
-	if !term.IsTerminal(fd) {
+	tty, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0)
+	if err != nil {
 		return "", fmt.Errorf("not a terminal and no password provided via --password, --password-stdin, EKCONF_PASSWORD, or keychain")
 	}
+	defer tty.Close()
 
 	fmt.Fprint(os.Stderr, "Password: ")
-	bytePW, err := term.ReadPassword(fd)
+	bytePW, err := term.ReadPassword(int(tty.Fd()))
 	fmt.Fprintln(os.Stderr)
 	if err != nil {
 		return "", fmt.Errorf("read password: %w", err)
@@ -63,17 +65,21 @@ func promptPassword() (string, error) {
 }
 
 func PromptNewPassword() (string, error) {
-	fd := int(os.Stdin.Fd())
+	tty, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0)
+	if err != nil {
+		return "", fmt.Errorf("not a terminal and no password provided via --password, --password-stdin, EKCONF_PASSWORD, or keychain")
+	}
+	defer tty.Close()
 
 	fmt.Fprint(os.Stderr, "New password: ")
-	pw, err := term.ReadPassword(fd)
+	pw, err := term.ReadPassword(int(tty.Fd()))
 	fmt.Fprintln(os.Stderr)
 	if err != nil {
 		return "", fmt.Errorf("read new password: %w", err)
 	}
 
 	fmt.Fprint(os.Stderr, "Confirm new password: ")
-	confirm, err := term.ReadPassword(fd)
+	confirm, err := term.ReadPassword(int(tty.Fd()))
 	fmt.Fprintln(os.Stderr)
 	if err != nil {
 		return "", fmt.Errorf("read confirm: %w", err)
