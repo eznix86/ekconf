@@ -145,7 +145,7 @@ Then restart your shell or run `compinit`.
 alias kconf=ekconf
 
 # plain kconf (original kconf renamed to pkconf to manage plain ones)
-alias pkconf="$(command -v kconf)"
+alias pkconf="/opt/homebrew/bin/kconf"
 
 # Use --no-shell for non-interactive tools
 alias helm="ekconf exec --no-shell -- helm"
