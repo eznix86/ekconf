@@ -144,6 +144,14 @@ Then restart your shell or run `compinit`.
 ```sh
 alias kconf=ekconf
 
+# plain kconf (original kconf rename to pkconf to manage secured one)
+alias pkconf="$(command -v kconf)"
+
+# Use --no-shell for non-interactive tools
+alias helm="ekconf exec --no-shell -- helm"
+alias helmfile="ekconf exec --no-shell -- helmfile"
+alias ktop="ekconf exec --no-shell -- ktop"
+
 # Respects your shell aliases and functions
 kubectl() {
   command ekconf exec --no-shell -- "$(command -v kubectl)" "$@"
@@ -152,9 +160,6 @@ kubectl() {
 # Works with kubecolor, k9s, custom scripts, or any kubectl wrapper
 alias k=kubectl
 alias kubecolor=kubectl
-
-# Use --no-shell for non-interactive tools
-alias helm="ekconf exec --no-shell -- helm"
 stern() {
   command ekconf exec --no-shell -- "$(command -v stern)" "$@"
 }
