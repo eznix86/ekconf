@@ -166,10 +166,8 @@ alias helm="ekconf exec -- helm"
 alias helmfile="ekconf exec -- helmfile"
 alias ktop="ekconf exec -- ktop"
 
-# Respects your shell aliases and functions
-kubectl() {
-  command ekconf exec -- "$(command -v kubectl)" "$@"
-}
+# --no-shell bypasses shell aliases and functions (runs the binary directly)
+alias kubectl="ekconf exec --no-shell -- kubectl"
 
 # Works with kubecolor, k9s, custom scripts, or any kubectl wrapper
 alias k=kubectl
@@ -179,7 +177,7 @@ stern() {
 }
 
 # Custom kubectl wrapper scripts also work
-kubectl() {
+my-kubectl() {
   command ekconf exec -- /usr/bin/custom-kubectl.py "$@"
 }
 ```
