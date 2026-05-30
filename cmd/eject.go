@@ -11,6 +11,7 @@ import (
 	"github.com/eznix86/ekconf/internal/config"
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
 
 var ejectForce bool
@@ -18,19 +19,30 @@ var ejectForce bool
 var openTTY = os.OpenFile
 
 var ejectCmd = &cobra.Command{
-	Use:   "eject [--force]",
-	Short: "Decrypt and write config.enc to ~/.kube/config",
-	Long: `Decrypt the entire encrypted kubeconfig and write it to ~/.kube/config.
+	Use:   "eject [<name>...] [--force]",
+	Short: "Decrypt and write contexts to ~/.kube/config",
+	Long: `Decrypt one or more contexts and write them to ~/.kube/config.
+If no context names are given, all contexts are written.
 
 This creates a standard plaintext kubeconfig that tools like kubectl can
 use directly. A confirmation prompt is shown unless --force is passed.`,
 	Example: `  ekconf eject
+  ekconf eject prod
+  ekconf eject staging prod
   ekconf eject --force
-  ekconf eject --password=secret`,
-	Args: cobra.NoArgs,
+  ekconf eject staging prod --force`,
+	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		ejectAll := len(args) == 0
+
 		if !ejectForce {
-			confirmed, err := promptConfirmation(cmd.ErrOrStderr(), "This will write an unencrypted kubeconfig to ~/.kube/config. Continue? [y/N]: ")
+			var msg string
+			if ejectAll {
+				msg = "This will write an unencrypted kubeconfig to ~/.kube/config. Continue? [y/N]: "
+			} else {
+				msg = fmt.Sprintf("This will write %d context(s) to ~/.kube/config. Continue? [y/N]: ", len(args))
+			}
+			confirmed, err := promptConfirmation(cmd.ErrOrStderr(), msg)
 			if err != nil {
 				return err
 			}
@@ -50,18 +62,25 @@ use directly. A confirmation prompt is shown unless --force is passed.`,
 			return err
 		}
 
-		cfg, err := config.Load()
-		if err == nil {
-			for name, entry := range cfg.Contexts {
-				if ctx, ok := kubeconfig.Contexts[name]; ok && entry.Namespace != "" {
-					ctx.Namespace = entry.Namespace
+		if ejectAll {
+			cfg, err := config.Load()
+			if err == nil {
+				for name, entry := range cfg.Contexts {
+					if ctx, ok := kubeconfig.Contexts[name]; ok && entry.Namespace != "" {
+						ctx.Namespace = entry.Namespace
+					}
+				}
+				if cfg.Current != "" {
+					kubeconfig.CurrentContext = cfg.Current
 				}
 			}
-			if cfg.Current != "" {
-				kubeconfig.CurrentContext = cfg.Current
+		} else {
+			filtered, err := filterKubeconfig(kubeconfig, args)
+			if err != nil {
+				return err
 			}
+			kubeconfig = filtered
 		}
-		// Eject still works if the plaintext index is missing or damaged; the encrypted kubeconfig is authoritative.
 
 		ejectedPlaintext, err := clientcmd.Write(*kubeconfig)
 		if err != nil {
@@ -90,9 +109,29 @@ use directly. A confirmation prompt is shown unless --force is passed.`,
 	},
 }
 
-func init() {
-	rootCmd.AddCommand(ejectCmd)
-	ejectCmd.Flags().BoolVar(&ejectForce, "force", false, "Skip confirmation prompt")
+func filterKubeconfig(kubeconfig *clientcmdapi.Config, names []string) (*clientcmdapi.Config, error) {
+	filtered := clientcmdapi.NewConfig()
+
+	for _, name := range names {
+		ctx, ok := kubeconfig.Contexts[name]
+		if !ok {
+			return nil, fmt.Errorf("context '%s' not found", name)
+		}
+
+		filtered.Contexts[name] = ctx
+		filtered.CurrentContext = name
+
+		if cluster, ok := kubeconfig.Clusters[ctx.Cluster]; ok {
+			filtered.Clusters[ctx.Cluster] = cluster
+		}
+		if ctx.AuthInfo != "" {
+			if authInfo, ok := kubeconfig.AuthInfos[ctx.AuthInfo]; ok {
+				filtered.AuthInfos[ctx.AuthInfo] = authInfo
+			}
+		}
+	}
+
+	return filtered, nil
 }
 
 func promptConfirmation(w io.Writer, message string) (bool, error) {
@@ -114,4 +153,9 @@ func promptConfirmation(w io.Writer, message string) (bool, error) {
 	default:
 		return false, nil
 	}
+}
+
+func init() {
+	rootCmd.AddCommand(ejectCmd)
+	ejectCmd.Flags().BoolVar(&ejectForce, "force", false, "Skip confirmation prompt")
 }

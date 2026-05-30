@@ -950,6 +950,243 @@ func TestRm_SharedClusterAuthInfoPreserved(t *testing.T) {
 	assert.Contains(t, kubeconfig.AuthInfos, "shared-user")
 }
 
+func TestEject_NamedContext(t *testing.T) {
+	setupTestHome(t)
+	writeTestConfigYAML(t, "keychain: false\ncurrent: test-cluster\ncontexts:\n  test-cluster:\n    namespace: default\n  staging:\n    namespace: staging\n")
+	writeTestConfigEnc(t, "test-password")
+
+	ejectForce = true
+	passwordFlag = "test-password"
+	t.Cleanup(func() {
+		passwordFlag = ""
+		ejectForce = false
+	})
+
+	output := captureOutput(t)
+
+	err := executeCommand("eject", "staging", "--force")
+	require.NoError(t, err)
+	assert.Contains(t, output(), "Decrypted config written")
+
+	// Verify only staging context was written
+	kubeConfig := filepath.Join(os.Getenv("HOME"), ".kube", "config")
+	_, err = os.Stat(kubeConfig)
+	require.NoError(t, err)
+
+	written, err := clientcmd.LoadFromFile(kubeConfig)
+	require.NoError(t, err)
+	assert.Contains(t, written.Contexts, "staging")
+	assert.NotContains(t, written.Contexts, "test-cluster")
+	// current-context should be the ejected one
+	assert.Equal(t, "staging", written.CurrentContext)
+}
+
+func TestEject_NamedContextNotFound(t *testing.T) {
+	setupTestHome(t)
+	writeTestConfigEnc(t, "test-password")
+
+	ejectForce = true
+	passwordFlag = "test-password"
+	t.Cleanup(func() {
+		passwordFlag = ""
+		ejectForce = false
+	})
+
+	err := executeCommand("eject", "nonexistent", "--force")
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "not found")
+}
+
+func TestEject_MultipleNamedContexts(t *testing.T) {
+	setupTestHome(t)
+	writeTestConfigYAML(t, "keychain: false\ncurrent: test-cluster\ncontexts:\n  test-cluster:\n    namespace: default\n  staging:\n    namespace: staging\n")
+	writeTestConfigEnc(t, "test-password")
+
+	ejectForce = true
+	passwordFlag = "test-password"
+	t.Cleanup(func() {
+		passwordFlag = ""
+		ejectForce = false
+	})
+
+	err := executeCommand("eject", "test-cluster", "staging", "--force")
+	require.NoError(t, err)
+
+	written, err := clientcmd.LoadFromFile(filepath.Join(os.Getenv("HOME"), ".kube", "config"))
+	require.NoError(t, err)
+	assert.Contains(t, written.Contexts, "test-cluster")
+	assert.Contains(t, written.Contexts, "staging")
+	assert.Len(t, written.Contexts, 2)
+}
+
+func TestEject_MultipleWithOneMissing(t *testing.T) {
+	setupTestHome(t)
+	writeTestConfigEnc(t, "test-password")
+
+	ejectForce = true
+	passwordFlag = "test-password"
+	t.Cleanup(func() {
+		passwordFlag = ""
+		ejectForce = false
+	})
+
+	err := executeCommand("eject", "test-cluster", "missing", "--force")
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "not found")
+}
+
+func TestEject_WithNamesAndNoForceRequiresConfirmation(t *testing.T) {
+	setupTestHome(t)
+	writeTestConfigYAML(t, "keychain: false\ncurrent: test-cluster\ncontexts:\n  test-cluster:\n    namespace: default\n")
+	writeTestConfigEnc(t, "test-password")
+
+	ejectForce = false
+	passwordFlag = "test-password"
+	t.Cleanup(func() {
+		passwordFlag = ""
+		ejectForce = false
+	})
+
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	_, err = w.WriteString("no\n")
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
+	oldOpenTTY := openTTY
+	openTTY = func(name string, flag int, perm os.FileMode) (*os.File, error) {
+		return r, nil
+	}
+	t.Cleanup(func() { openTTY = oldOpenTTY })
+
+	output := captureOutput(t)
+
+	err = executeCommand("eject", "test-cluster")
+	require.NoError(t, err)
+	assert.Contains(t, output(), "Aborted")
+}
+
+func TestImport_NoSourceFile(t *testing.T) {
+	setupTestHome(t)
+	writeTestConfigYAML(t, "keychain: false\ncurrent: \"\"\ncontexts: {}\n")
+
+	passwordFlag = "test-password"
+	t.Cleanup(func() { passwordFlag = "" })
+
+	err := executeCommand("import")
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "does not exist")
+}
+
+func TestImport_Success(t *testing.T) {
+	setupTestHome(t)
+	writeTestConfigYAML(t, "keychain: false\ncurrent: \"\"\ncontexts: {}\n")
+
+	// Write a plaintext kubeconfig
+	home := os.Getenv("HOME")
+	kubeDir := filepath.Join(home, ".kube")
+	require.NoError(t, os.MkdirAll(kubeDir, 0o700))
+	srcPath := filepath.Join(kubeDir, "config")
+	kc := clientcmdapi.NewConfig()
+	kc.CurrentContext = "imported-ctx"
+	kc.Contexts["imported-ctx"] = &clientcmdapi.Context{Cluster: "imported-cluster", AuthInfo: "imported-user"}
+	kc.Clusters["imported-cluster"] = &clientcmdapi.Cluster{Server: "https://imported.example.com"}
+	kc.AuthInfos["imported-user"] = &clientcmdapi.AuthInfo{Token: "imported-token"}
+	data, err := clientcmd.Write(*kc)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(srcPath, data, 0o600))
+
+	passwordFlag = "test-password"
+	t.Cleanup(func() { passwordFlag = "" })
+
+	output := captureOutput(t)
+
+	err = executeCommand("import")
+	require.NoError(t, err)
+
+	got := output()
+	assert.Contains(t, got, "Imported context 'imported-ctx'")
+	// Source file should still exist without --force
+	_, err = os.Stat(srcPath)
+	require.NoError(t, err, "source file should not be removed without --force")
+
+	// Verify context was added
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	assert.Contains(t, cfg.Contexts, "imported-ctx")
+
+	// Verify auth info is preserved in encrypted config
+	decrypted, err := loadDecryptedKubeconfig("test-password")
+	require.NoError(t, err)
+	assert.Equal(t, "imported-token", decrypted.AuthInfos["imported-ctx/imported-user"].Token)
+}
+
+func TestImport_WithForceRemovesSource(t *testing.T) {
+	setupTestHome(t)
+	writeTestConfigYAML(t, "keychain: false\ncurrent: \"\"\ncontexts: {}\n")
+
+	home := os.Getenv("HOME")
+	kubeDir := filepath.Join(home, ".kube")
+	require.NoError(t, os.MkdirAll(kubeDir, 0o700))
+	srcPath := filepath.Join(kubeDir, "config")
+	kc := clientcmdapi.NewConfig()
+	kc.CurrentContext = "imported-ctx"
+	kc.Contexts["imported-ctx"] = &clientcmdapi.Context{Cluster: "imported-cluster", AuthInfo: "imported-user"}
+	kc.Clusters["imported-cluster"] = &clientcmdapi.Cluster{Server: "https://imported.example.com"}
+	kc.AuthInfos["imported-user"] = &clientcmdapi.AuthInfo{Token: "imported-token"}
+	data, err := clientcmd.Write(*kc)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(srcPath, data, 0o600))
+
+	passwordFlag = "test-password"
+	t.Cleanup(func() { passwordFlag = "" })
+
+	output := captureOutput(t)
+
+	err = executeCommand("import", "--force")
+	require.NoError(t, err)
+
+	got := output()
+	assert.Contains(t, got, "Imported context 'imported-ctx'")
+	assert.Contains(t, got, "Removed")
+
+	// Source file should be removed
+	_, err = os.Stat(srcPath)
+	assert.True(t, os.IsNotExist(err), "source file should be removed with --force")
+}
+
+func TestFilterKubeconfig(t *testing.T) {
+	kc := clientcmdapi.NewConfig()
+	kc.Contexts["ctx1"] = &clientcmdapi.Context{Cluster: "cluster1", AuthInfo: "user1"}
+	kc.Contexts["ctx2"] = &clientcmdapi.Context{Cluster: "cluster2", AuthInfo: "user2"}
+	kc.Clusters["cluster1"] = &clientcmdapi.Cluster{Server: "https://one.example.com"}
+	kc.Clusters["cluster2"] = &clientcmdapi.Cluster{Server: "https://two.example.com"}
+	kc.AuthInfos["user1"] = &clientcmdapi.AuthInfo{Token: "token1"}
+	kc.AuthInfos["user2"] = &clientcmdapi.AuthInfo{Token: "token2"}
+
+	filtered, err := filterKubeconfig(kc, []string{"ctx1"})
+	require.NoError(t, err)
+
+	assert.Contains(t, filtered.Contexts, "ctx1")
+	assert.NotContains(t, filtered.Contexts, "ctx2")
+	assert.Contains(t, filtered.Clusters, "cluster1")
+	assert.NotContains(t, filtered.Clusters, "cluster2")
+	assert.Contains(t, filtered.AuthInfos, "user1")
+	assert.NotContains(t, filtered.AuthInfos, "user2")
+	assert.Equal(t, "ctx1", filtered.CurrentContext)
+}
+
+func TestFilterKubeconfig_MissingContext(t *testing.T) {
+	kc := clientcmdapi.NewConfig()
+	kc.Contexts["ctx1"] = &clientcmdapi.Context{Cluster: "cluster1", AuthInfo: "user1"}
+	kc.Clusters["cluster1"] = &clientcmdapi.Cluster{Server: "https://one.example.com"}
+	kc.AuthInfos["user1"] = &clientcmdapi.AuthInfo{Token: "token1"}
+
+	_, err := filterKubeconfig(kc, []string{"nonexistent"})
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "not found")
+}
+
 func TestRootHelp(t *testing.T) {
 	resetCommandTestState(t)
 	output := captureOutput(t)
@@ -968,4 +1205,5 @@ func TestRootHelp(t *testing.T) {
 	assert.Contains(t, got, "exec")
 	assert.Contains(t, got, "eject")
 	assert.Contains(t, got, "config")
+	assert.Contains(t, got, "import")
 }
