@@ -39,7 +39,7 @@ tmpdir="$(mktemp -d)"
 trap 'echo "Cleaning up..."; rm -rf "$tmpdir"' EXIT
 
 echo "Downloading ${asset}..."
-curl -fL# "$url" -o "$tmpdir/$asset"
+curl -fL --progress-bar "$url" -o "$tmpdir/$asset"
 
 echo "Verifying checksum..."
 curl -fsSL "$checksums_url" -o "$tmpdir/checksums.txt"
