@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/eznix86/ekconf/internal/config"
 	"github.com/eznix86/ekconf/internal/password"
@@ -48,7 +49,13 @@ encryption at rest and optional keychain integration.`,
 		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return cmd.Help()
+		if err := cmd.Help(); err != nil {
+			return err
+		}
+		noticeCtx, cancel := context.WithTimeout(cmd.Context(), 5*time.Second)
+		defer cancel()
+		MaybePrintUpdateNotice(noticeCtx, cmd.OutOrStdout())
+		return nil
 	},
 }
 
