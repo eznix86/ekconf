@@ -31,7 +31,8 @@ use directly. A confirmation prompt is shown unless --force is passed.`,
   ekconf eject staging prod
   ekconf eject --force
   ekconf eject staging prod --force`,
-	Args: cobra.ArbitraryArgs,
+	Args:              cobra.ArbitraryArgs,
+	ValidArgsFunction: completeContext,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ejectAll := len(args) == 0
 
