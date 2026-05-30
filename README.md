@@ -143,8 +143,27 @@ Then restart your shell or run `compinit`.
 
 ```sh
 alias kconf=ekconf
+
+# Drop-in replacement — respects your shell aliases and functions
 kubectl() {
   command ekconf exec --no-shell -- "$(command -v kubectl)" "$@"
+}
+
+# Works with kubecolor, k9s, custom scripts, or any kubectl wrapper
+alias k=kubectl
+alias kubecolor=kubectl
+
+# Use --no-shell for non-interactive tools
+stern() {
+  command ekconf exec --no-shell -- "$(command -v stern)" "$@"
+}
+helm() {
+  command ekconf exec --no-shell -- "$(command -v helm)" "$@"
+}
+
+# Custom kubectl wrapper scripts also work
+kubectl() {
+  command ekconf exec --no-shell -- /usr/bin/custom-kubectl.py "$@"
 }
 ```
 
