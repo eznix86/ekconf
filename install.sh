@@ -38,8 +38,13 @@ trap 'rm -rf "$tmpdir"' EXIT
 curl -fsSL "$url" -o "$tmpdir/$asset"
 curl -fsSL "$checksums_url" -o "$tmpdir/checksums.txt"
 tar -xzf "$tmpdir/$asset" -C "$tmpdir"
-grep "$asset" "$tmpdir/checksums.txt" > "$tmpdir/checksum.txt"
-(cd "$tmpdir" && shasum -a 256 -c checksum.txt)
+
+expected="$(grep "$asset" "$tmpdir/checksums.txt" | awk '{print $1}')"
+actual="$(openssl dgst -sha256 "$tmpdir/$asset" | awk '{print $NF}')"
+if [[ "$expected" != "$actual" ]]; then
+	echo "Checksum mismatch: expected $expected, got $actual" >&2
+	exit 1
+fi
 install -m 0755 "$tmpdir/$BIN_NAME" "$BIN_DIR/$BIN_NAME"
 
 echo "Installed $BIN_NAME to $BIN_DIR/$BIN_NAME"
