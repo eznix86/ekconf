@@ -65,7 +65,7 @@ go install .
 | `ekconf exec [<name>] -- <cmd>` | Run a command with decrypted KUBECONFIG |
 | `ekconf rotate` | Re-encrypt with a new password |
 | `ekconf eject [--force]` | Decrypt and write to `~/.kube/config` |
-| `ekconf config list` | View current configuration |
+| `ekconf config list` | View configuration (colorized with` yaml.colorize=true`) |
 | `ekconf config <key=value>` | Set a configuration option |
 | `ekconf update` | Self-update from GitHub Releases |
 | `ekconf update --check` | Check for updates without installing |
@@ -90,6 +90,7 @@ ekconf use my-cluster
 ekconf ns my-namespace
 
 # Run a command with decrypted config injected via KUBECONFIG
+# Respects shell aliases, functions, and interactive features
 ekconf exec -- kubectl get pods
 ekconf exec staging -- kubectl get pods
 ```
@@ -154,7 +155,7 @@ ekconf config keychain=true
 # Disable keychain
 ekconf config keychain=false
 
-# Colorize YAML output
+# Colorize YAML output (view, config list)
 ekconf config yaml.colorize=true
 ```
 
