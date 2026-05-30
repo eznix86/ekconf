@@ -30,6 +30,20 @@ Linux Secret Service backends.
 
 ## Installation
 
+Install prebuilt binaries (no Go required):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/eznix86/ekconf/main/install.sh | bash
+```
+
+Or install a specific version:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/eznix86/ekconf/main/install.sh | bash -s -- 1.2.3
+```
+
+Or install via Go:
+
 ```sh
 go install github.com/eznix86/ekconf@latest
 ```
@@ -73,6 +87,9 @@ ekconf exec staging -- kubectl get pods
 
 # Re-encrypt with a new password
 ekconf rotate
+
+# Self-update from GitHub Releases
+ekconf update
 
 # Decrypt and write back to ~/.kube/config
 ekconf eject
