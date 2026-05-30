@@ -10,7 +10,10 @@ import (
 var nsCmd = &cobra.Command{
 	Use:   "ns <namespace>",
 	Short: "Set default namespace on the active context",
-	Args:  cobra.ExactArgs(1),
+	Long:  `Set the default namespace for the active context. This is stored in config.yaml and used by ekconf exec.`,
+	Example: `  ekconf ns default
+  ekconf ns kube-system`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		namespace := args[0]
 
@@ -27,8 +30,8 @@ var nsCmd = &cobra.Command{
 			return fmt.Errorf("set namespace: %w", err)
 		}
 
-		fmt.Printf("Set namespace '%s' on context '%s'\n", namespace, cfg.Current)
-		return nil
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Set namespace '%s' on context '%s'\n", namespace, cfg.Current)
+		return err
 	},
 }
 

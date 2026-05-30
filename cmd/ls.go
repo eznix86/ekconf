@@ -8,8 +8,11 @@ import (
 )
 
 var lsCmd = &cobra.Command{
-	Use:   "ls",
-	Short: "List all contexts",
+	Use:     "ls",
+	Short:   "List all contexts",
+	Long:    `List all contexts stored in the encrypted kubeconfig. The active context is marked with *.`,
+	Example: `  ekconf ls`,
+	Args:    cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.Load()
 		if err != nil {
@@ -17,8 +20,8 @@ var lsCmd = &cobra.Command{
 		}
 
 		if len(cfg.Contexts) == 0 {
-			fmt.Println("No contexts found")
-			return nil
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), "No contexts found")
+			return err
 		}
 
 		for name, entry := range cfg.Contexts {
@@ -28,9 +31,12 @@ var lsCmd = &cobra.Command{
 			}
 
 			if entry.Namespace != "" && entry.Namespace != "default" {
-				fmt.Printf("%s %-29s namespace: %s\n", mark, name, entry.Namespace)
+				_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s %-29s namespace: %s\n", mark, name, entry.Namespace)
 			} else {
-				fmt.Printf("%s %s\n", mark, name)
+				_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s %s\n", mark, name)
+			}
+			if err != nil {
+				return err
 			}
 		}
 

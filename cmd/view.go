@@ -2,10 +2,9 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
+	"gabe565.com/utils/coloryaml"
 	"github.com/eznix86/ekconf/internal/config"
-	"github.com/eznix86/ekconf/internal/crypto"
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
@@ -16,7 +15,13 @@ var viewPlain bool
 var viewCmd = &cobra.Command{
 	Use:   "view <name>",
 	Short: "Decrypt and print a single context's kubeconfig (redacted by default)",
-	Args:  cobra.ExactArgs(1),
+	Long: `Decrypt and print a single context's kubeconfig to stdout. Output is
+always colorized YAML. Sensitive fields (tokens, certificates) are redacted
+by default. Use --plain to include all fields.`,
+	Example: `  ekconf view prod
+  ekconf view --plain staging
+  ekconf view --password=secret dev`,
+	Args:              cobra.ExactArgs(1),
 	ValidArgsFunction: completeContext,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		contextName := args[0]
@@ -31,29 +36,9 @@ var viewCmd = &cobra.Command{
 			return err
 		}
 
-		encPath, err := config.EncPath()
+		kubeconfig, err := loadDecryptedKubeconfig(password)
 		if err != nil {
 			return err
-		}
-
-		data, err := os.ReadFile(encPath)
-		if err != nil {
-			return fmt.Errorf("read config.enc: %w", err)
-		}
-
-		ef, err := crypto.Unmarshal(data)
-		if err != nil {
-			return fmt.Errorf("parse encrypted file: %w", err)
-		}
-
-		plaintext, err := crypto.Decrypt(ef, password)
-		if err != nil {
-			return fmt.Errorf("decrypt (wrong password?): %w", err)
-		}
-
-		kubeconfig, err := clientcmd.Load(plaintext)
-		if err != nil {
-			return fmt.Errorf("parse kubeconfig: %w", err)
 		}
 
 		if _, ok := kubeconfig.Contexts[contextName]; !ok {
@@ -92,10 +77,14 @@ var viewCmd = &cobra.Command{
 			return fmt.Errorf("marshal: %w", err)
 		}
 
-		storePasswordIfNeeded(password)
+		storePasswordIfNeeded(cmd.ErrOrStderr(), password)
 
-		fmt.Print(string(out))
-		return nil
+		if cfg.YAML != nil && cfg.YAML.Colorize {
+			_, err = coloryaml.WriteString(cmd.OutOrStdout(), string(out))
+			return err
+		}
+		_, err = cmd.OutOrStdout().Write(out)
+		return err
 	},
 }
 

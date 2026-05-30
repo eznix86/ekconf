@@ -1,55 +1,83 @@
 package cmd
 
 import (
+	"context"
+	_ "embed"
 	"fmt"
-	"os"
+	"io"
+	"strings"
 
 	"github.com/eznix86/ekconf/internal/config"
 	"github.com/eznix86/ekconf/internal/password"
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
 var (
 	passwordFlag  string
 	passwordStdin bool
+	envPassword   string
+	version       = "dev"
+	commit        = "none"
+	built         = "unknown"
 )
 
+//go:embed banner.txt
+var banner string
+
 var rootCmd = &cobra.Command{
-	Use:   "ekconf",
-	Short: "Encrypted kubeconfig manager",
-	Long: "\n\x1b[36m" +
-		"           oooo                                         .o88o. \n" +
-		"          `888                                         888 `\" \n" +
-		" .ooooo.   888  oooo   .ooooo.   .ooooo.  ooo. .oo.   o888oo  \n" +
-		"d88' `88b  888 .8P'   d88' `\"Y8 d88' `88b `888P\"Y88b   888    \n" +
-		"888ooo888  888888.    888       888   888  888   888   888    \n" +
-		"888    .o  888 `88b.  888   .o8 888   888  888   888   888    \n" +
-		"`Y8bod8P' o888o o888o `Y8bod8P' `Y8bod8P' o888o o888o o888o \n" +
-		"\n" +
-		"\n" +
-		"\n" +
-		"\x1b[0m" +
-		"Allows you to add and delete kubeconfigs by merging kubeconfig\n" +
-		"files together and breaking them apart appropriately, with\n" +
-		"encryption at rest and optional keychain integration.",
+	Use:           "ekconf",
+	Short:         "Encrypted kubeconfig manager",
+	Version:       versionString(),
+	SilenceUsage:  true,
+	SilenceErrors: true,
+	Long: color.New(color.FgCyan).Sprint(banner) + `
+Allows you to add and delete kubeconfigs by merging kubeconfig
+files together and breaking them apart appropriately, with
+encryption at rest and optional keychain integration.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		return config.EnsureDir()
+		if cmd.Name() == "version" || cmd.Name() == "update" || cmd.Name() == "completion" {
+			return nil
+		}
+		if err := config.EnsureDir(); err != nil {
+			return err
+		}
+		if cmd.Flags().Changed("password") || passwordStdin || cmd.Name() == "exec" || cmd.Name() == "add" || cmd.Name() == "rm" || cmd.Name() == "eject" || cmd.Name() == "rotate" || cmd.Name() == "view" {
+			return recoverPendingFileTransaction()
+		}
+		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
 	},
 }
 
-func Execute() {
-	if err := rootCmd.Execute(); err != nil {
-		os.Exit(1)
-	}
+func ExecuteContext(ctx context.Context) error {
+	return rootCmd.ExecuteContext(ctx)
+}
+
+func SetEnvPassword(value string) {
+	envPassword = value
 }
 
 func init() {
 	rootCmd.InitDefaultCompletionCmd()
+	rootCmd.InitDefaultVersionFlag()
+	rootCmd.SetVersionTemplate("{{.Version}}\n")
 	rootCmd.PersistentFlags().StringVar(&passwordFlag, "password", "", "Password for decryption (inline)")
 	rootCmd.PersistentFlags().BoolVar(&passwordStdin, "password-stdin", false, "Read password from stdin")
+	rootCmd.MarkFlagsMutuallyExclusive("password", "password-stdin")
+}
+
+func versionString() string {
+	parts := []string{fmt.Sprintf("version: %s", version)}
+	if commit != "none" {
+		parts = append(parts, fmt.Sprintf("commit: %s", commit))
+	}
+	if built != "unknown" {
+		parts = append(parts, fmt.Sprintf("built: %s", built))
+	}
+	return strings.Join(parts, "\n")
 }
 
 func shouldUseKeychain() bool {
@@ -65,7 +93,7 @@ func resolvePassword() (string, error) {
 }
 
 func resolvePasswordWithKeychain(useKeychain bool) (string, error) {
-	return passwordResolve(passwordFlag, passwordStdin, useKeychain)
+	return password.Resolve(passwordFlag, passwordStdin, useKeychain, envPassword)
 }
 
 func completeContext(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
@@ -81,7 +109,7 @@ func completeContext(cmd *cobra.Command, args []string, toComplete string) ([]st
 	return names, cobra.ShellCompDirectiveNoFileComp
 }
 
-func storePasswordIfNeeded(pw string) {
+func storePasswordIfNeeded(w io.Writer, pw string) {
 	if !shouldUseKeychain() {
 		return
 	}
@@ -89,6 +117,6 @@ func storePasswordIfNeeded(pw string) {
 		return
 	}
 	if err := password.Store(pw); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to store password in keychain: %v\n", err)
+		fmt.Fprintf(w, "Warning: failed to store password in keychain: %v\n", err)
 	}
 }

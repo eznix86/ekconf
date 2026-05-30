@@ -14,10 +14,10 @@ const (
 	SaltLen  = 16
 	NonceLen = 12
 
-	ArgonMemory      = 64 * 1024
-	ArgonTime        = 3
-	ArgonThreads     = 4
-	ArgonKeyLen      = 32
+	ArgonMemory  = 64 * 1024
+	ArgonTime    = 3
+	ArgonThreads = 4
+	ArgonKeyLen  = 32
 )
 
 type EncryptedFile struct {
@@ -48,12 +48,12 @@ func Encrypt(plaintext []byte, password string) (*EncryptedFile, error) {
 		return nil, fmt.Errorf("new cipher: %w", err)
 	}
 
-	aesgcm, err := cipher.NewGCM(block)
+	aesGCM, err := cipher.NewGCM(block)
 	if err != nil {
 		return nil, fmt.Errorf("new gcm: %w", err)
 	}
 
-	ciphertext := aesgcm.Seal(nil, nonce, plaintext, nil)
+	ciphertext := aesGCM.Seal(nil, nonce, plaintext, nil)
 
 	return &EncryptedFile{
 		Salt:       salt,
@@ -70,12 +70,12 @@ func Decrypt(ef *EncryptedFile, password string) ([]byte, error) {
 		return nil, fmt.Errorf("new cipher: %w", err)
 	}
 
-	aesgcm, err := cipher.NewGCM(block)
+	aesGCM, err := cipher.NewGCM(block)
 	if err != nil {
 		return nil, fmt.Errorf("new gcm: %w", err)
 	}
 
-	plaintext, err := aesgcm.Open(nil, ef.Nonce, ef.Ciphertext, nil)
+	plaintext, err := aesGCM.Open(nil, ef.Nonce, ef.Ciphertext, nil)
 	if err != nil {
 		return nil, fmt.Errorf("decrypt: %w", err)
 	}

@@ -8,6 +8,14 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+const (
+	DirName                 = ".ekube"
+	ConfigFileName          = "config.yaml"
+	EncryptedConfigFileName = "config.enc"
+	DefaultNamespace        = "default"
+	tempConfigPattern       = ".ekube-config-*"
+)
+
 type ContextEntry struct {
 	Namespace string `json:"namespace,omitempty"`
 }
@@ -35,7 +43,7 @@ func Dir() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("home dir: %w", err)
 	}
-	return filepath.Join(home, ".ekube"), nil
+	return filepath.Join(home, DirName), nil
 }
 
 func ConfigPath() (string, error) {
@@ -43,7 +51,7 @@ func ConfigPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "config.yaml"), nil
+	return filepath.Join(dir, ConfigFileName), nil
 }
 
 func EncPath() (string, error) {
@@ -51,7 +59,7 @@ func EncPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "config.enc"), nil
+	return filepath.Join(dir, EncryptedConfigFileName), nil
 }
 
 func EnsureDir() error {
@@ -59,7 +67,7 @@ func EnsureDir() error {
 	if err != nil {
 		return err
 	}
-	return os.MkdirAll(dir, 0700)
+	return os.MkdirAll(dir, 0o700)
 }
 
 func Load() (*Config, error) {
@@ -103,7 +111,24 @@ func Save(cfg *Config) error {
 		return fmt.Errorf("marshal config: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0600); err != nil {
+	tmp, err := os.CreateTemp(filepath.Dir(path), tempConfigPattern)
+	if err != nil {
+		return fmt.Errorf("create temp config: %w", err)
+	}
+	defer os.Remove(tmp.Name())
+
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return fmt.Errorf("write temp config: %w", err)
+	}
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return fmt.Errorf("chmod temp config: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temp config: %w", err)
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
 		return fmt.Errorf("write config: %w", err)
 	}
 
@@ -132,14 +157,14 @@ func SetNamespace(contextName, namespace string) error {
 	return Save(cfg)
 }
 
-func AddContext(name string, namespace string) error {
+func AddContext(name, namespace string) error {
 	cfg, err := Load()
 	if err != nil {
 		return err
 	}
 
 	if namespace == "" {
-		namespace = "default"
+		namespace = DefaultNamespace
 	}
 
 	cfg.Contexts[name] = ContextEntry{Namespace: namespace}
@@ -167,7 +192,7 @@ func (c *Config) ContextExists(name string) bool {
 func (c *Config) GetNamespace(name string) string {
 	entry, ok := c.Contexts[name]
 	if !ok || entry.Namespace == "" {
-		return "default"
+		return DefaultNamespace
 	}
 	return entry.Namespace
 }

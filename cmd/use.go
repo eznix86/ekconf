@@ -10,7 +10,10 @@ import (
 var useCmd = &cobra.Command{
 	Use:   "use <name>",
 	Short: "Set the active context",
-	Args:  cobra.ExactArgs(1),
+	Long:  `Set the active context in config.yaml. This does not modify the encrypted kubeconfig.`,
+	Example: `  ekconf use prod
+  ekconf use staging`,
+	Args:              cobra.ExactArgs(1),
 	ValidArgsFunction: completeContext,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		contextName := args[0]
@@ -28,8 +31,8 @@ var useCmd = &cobra.Command{
 			return fmt.Errorf("save current context: %w", err)
 		}
 
-		fmt.Printf("Switched to context '%s'\n", contextName)
-		return nil
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Switched to context '%s'\n", contextName)
+		return err
 	},
 }
 

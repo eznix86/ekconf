@@ -13,6 +13,10 @@ import (
 var rotateCmd = &cobra.Command{
 	Use:   "rotate",
 	Short: "Re-encrypt config.enc with a new password",
+	Long:  `Re-encrypt the encrypted kubeconfig with a new password. The old password is required. If keychain is enabled, the stored password is updated automatically.`,
+	Example: `  ekconf rotate
+  ekconf rotate --password=old-secret`,
+	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		currentPassword, err := resolvePassword()
 		if err != nil {
@@ -29,19 +33,9 @@ var rotateCmd = &cobra.Command{
 			return err
 		}
 
-		data, err := os.ReadFile(encPath)
+		plaintext, err := readDecryptedConfigData(currentPassword)
 		if err != nil {
-			return fmt.Errorf("read config.enc: %w", err)
-		}
-
-		ef, err := crypto.Unmarshal(data)
-		if err != nil {
-			return fmt.Errorf("parse encrypted file: %w", err)
-		}
-
-		plaintext, err := crypto.Decrypt(ef, currentPassword)
-		if err != nil {
-			return fmt.Errorf("decrypt (wrong password?): %w", err)
+			return err
 		}
 
 		efNew, err := crypto.Encrypt(plaintext, newPassword)
@@ -50,7 +44,7 @@ var rotateCmd = &cobra.Command{
 		}
 
 		tmpPath := encPath + ".tmp"
-		if err := os.WriteFile(tmpPath, crypto.Marshal(efNew), 0600); err != nil {
+		if err := os.WriteFile(tmpPath, crypto.Marshal(efNew), 0o600); err != nil {
 			os.Remove(tmpPath)
 			return fmt.Errorf("write temp file: %w", err)
 		}
@@ -63,12 +57,12 @@ var rotateCmd = &cobra.Command{
 		cfg, err := config.Load()
 		if err == nil && cfg.Keychain {
 			if err := password.Store(newPassword); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to update keychain: %v\n", err)
+				fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to update keychain: %v\n", err)
 			}
 		}
 
-		fmt.Println("Password rotated successfully")
-		return nil
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), "Password rotated successfully")
+		return err
 	},
 }
 

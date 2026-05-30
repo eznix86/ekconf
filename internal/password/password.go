@@ -1,9 +1,11 @@
 package password
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/user"
 	"strings"
 
 	"golang.org/x/term"
@@ -13,7 +15,11 @@ import (
 
 const keyringService = "ekconf"
 
-func Resolve(passwordFlag string, passwordStdin bool, useKeychain bool) (string, error) {
+const noTTYPasswordMessage = "not a terminal and no password provided via --password, --password-stdin, or EKCONF_PASSWORD"
+
+var lookupCurrentUser = user.Current
+
+func Resolve(passwordFlag string, passwordStdin, useKeychain bool, envPassword string) (string, error) {
 	if passwordFlag != "" {
 		return passwordFlag, nil
 	}
@@ -26,8 +32,8 @@ func Resolve(passwordFlag string, passwordStdin bool, useKeychain bool) (string,
 		return strings.TrimRight(string(data), "\r\n"), nil
 	}
 
-	if env := os.Getenv("EKCONF_PASSWORD"); env != "" {
-		return env, nil
+	if envPassword != "" {
+		return envPassword, nil
 	}
 
 	if useKeychain {
@@ -37,7 +43,7 @@ func Resolve(passwordFlag string, passwordStdin bool, useKeychain bool) (string,
 		}
 	}
 
-	return promptPassword()
+	return promptPassword(useKeychain)
 }
 
 func Store(password string) error {
@@ -48,10 +54,13 @@ func Delete() error {
 	return keyring.Delete(keyringService, currentUser())
 }
 
-func promptPassword() (string, error) {
+func promptPassword(useKeychain bool) (string, error) {
 	tty, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0)
 	if err != nil {
-		return "", fmt.Errorf("not a terminal and no password provided via --password, --password-stdin, EKCONF_PASSWORD, or keychain")
+		if useKeychain {
+			return "", fmt.Errorf(noTTYPasswordMessage + ", or keychain")
+		}
+		return "", errors.New(noTTYPasswordMessage)
 	}
 	defer tty.Close()
 
@@ -67,7 +76,7 @@ func promptPassword() (string, error) {
 func PromptNewPassword() (string, error) {
 	tty, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0)
 	if err != nil {
-		return "", fmt.Errorf("not a terminal and no password provided via --password, --password-stdin, EKCONF_PASSWORD, or keychain")
+		return "", errors.New(noTTYPasswordMessage)
 	}
 	defer tty.Close()
 
@@ -93,12 +102,19 @@ func PromptNewPassword() (string, error) {
 }
 
 func currentUser() string {
-	u := os.Getenv("USER")
-	if u == "" {
-		u = os.Getenv("USERNAME")
+	if u, err := lookupCurrentUser(); err == nil {
+		if u.Username != "" {
+			return u.Username
+		}
+		if u.Uid != "" {
+			return "uid-" + u.Uid
+		}
 	}
-	if u == "" {
-		u = "unknown"
+	if u := os.Getenv("USER"); u != "" {
+		return u
 	}
-	return u
+	if u := os.Getenv("USERNAME"); u != "" {
+		return u
+	}
+	return "uid-unknown"
 }
