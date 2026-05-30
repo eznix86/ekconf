@@ -8,6 +8,7 @@ import (
 	"github.com/eznix86/ekconf/internal/config"
 	"github.com/eznix86/ekconf/internal/crypto"
 	"github.com/spf13/cobra"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 var ejectForce bool
@@ -52,6 +53,28 @@ var ejectCmd = &cobra.Command{
 			return fmt.Errorf("decrypt (wrong password?): %w", err)
 		}
 
+		kubeconfig, err := clientcmd.Load(plaintext)
+		if err != nil {
+			return fmt.Errorf("parse kubeconfig: %w", err)
+		}
+
+		cfg, err := config.Load()
+		if err == nil {
+			for name, entry := range cfg.Contexts {
+				if ctx, ok := kubeconfig.Contexts[name]; ok && entry.Namespace != "" {
+					ctx.Namespace = entry.Namespace
+				}
+			}
+			if cfg.Current != "" {
+				kubeconfig.CurrentContext = cfg.Current
+			}
+		}
+
+		ejectedPlaintext, err := clientcmd.Write(*kubeconfig)
+		if err != nil {
+			return fmt.Errorf("marshal ejected kubeconfig: %w", err)
+		}
+
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return fmt.Errorf("home dir: %w", err)
@@ -63,7 +86,7 @@ var ejectCmd = &cobra.Command{
 		}
 
 		kubeConfigPath := filepath.Join(kubeDir, "config")
-		if err := os.WriteFile(kubeConfigPath, plaintext, 0600); err != nil {
+		if err := os.WriteFile(kubeConfigPath, ejectedPlaintext, 0600); err != nil {
 			return fmt.Errorf("write ~/.kube/config: %w", err)
 		}
 
