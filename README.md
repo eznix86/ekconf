@@ -159,26 +159,28 @@ alias kconf=ekconf
 # unencrypted/ejected kubeconfigs can be managed side by side
 alias pkconf="/opt/homebrew/bin/kconf"
 
-# Use --no-shell for non-interactive tools
-alias helm="ekconf exec --no-shell -- helm"
-alias helmfile="ekconf exec --no-shell -- helmfile"
-alias ktop="ekconf exec --no-shell -- ktop"
+# ekconf exec uses a shell by default, so aliases and functions
+# defined in your shell config are available to the command.
+# Add --no-shell to run the binary directly and bypass aliases.
+alias helm="ekconf exec -- helm"
+alias helmfile="ekconf exec -- helmfile"
+alias ktop="ekconf exec -- ktop"
 
 # Respects your shell aliases and functions
 kubectl() {
-  command ekconf exec --no-shell -- "$(command -v kubectl)" "$@"
+  command ekconf exec -- "$(command -v kubectl)" "$@"
 }
 
 # Works with kubecolor, k9s, custom scripts, or any kubectl wrapper
 alias k=kubectl
 alias kubecolor=kubectl
 stern() {
-  command ekconf exec --no-shell -- "$(command -v stern)" "$@"
+  command ekconf exec -- "$(command -v stern)" "$@"
 }
 
 # Custom kubectl wrapper scripts also work
 kubectl() {
-  command ekconf exec --no-shell -- /usr/bin/custom-kubectl.py "$@"
+  command ekconf exec -- /usr/bin/custom-kubectl.py "$@"
 }
 ```
 
