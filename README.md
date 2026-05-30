@@ -144,7 +144,7 @@ Then restart your shell or run `compinit`.
 ```sh
 alias kconf=ekconf
 
-# Drop-in replacement — respects your shell aliases and functions
+# Respects your shell aliases and functions
 kubectl() {
   command ekconf exec --no-shell -- "$(command -v kubectl)" "$@"
 }
