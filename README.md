@@ -219,8 +219,6 @@ ekconf import --force  # import and remove ~/.kube/config
 Export contexts from the encrypted store back to plaintext `~/.kube/config`.
 
 ```sh
-
-```sh
 ekconf eject                  # all contexts
 ekconf eject prod             # single context
 ekconf eject staging prod --force  # multiple, skip prompt
