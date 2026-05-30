@@ -53,17 +53,19 @@ var execCmd = &cobra.Command{
 	Short: "Run a command with decrypted config injected via KUBECONFIG",
 	ValidArgsFunction: completeContext,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.Load()
+		if err != nil {
+			return fmt.Errorf("load config: %w", err)
+		}
+
 		var contextName string
 		var commandArgs []string
 
-		if len(args) >= 1 {
-			cfg, loadErr := config.Load()
-			if loadErr == nil && cfg.ContextExists(args[0]) {
-				contextName = args[0]
-				commandArgs = args[1:]
-			} else {
-				commandArgs = args
-			}
+		if len(args) >= 1 && cfg.ContextExists(args[0]) {
+			contextName = args[0]
+			commandArgs = args[1:]
+		} else {
+			commandArgs = args
 		}
 
 		if len(commandArgs) == 0 {
@@ -71,10 +73,6 @@ var execCmd = &cobra.Command{
 		}
 
 		if contextName == "" {
-			cfg, err := config.Load()
-			if err != nil {
-				return fmt.Errorf("load config: %w", err)
-			}
 			if cfg.Current == "" {
 				return fmt.Errorf("no active context set and no context name provided")
 			}
@@ -120,6 +118,11 @@ var execCmd = &cobra.Command{
 		singleCtx := clientcmdapi.NewConfig()
 		singleCtx.CurrentContext = contextName
 		singleCtx.Contexts[contextName] = kubeconfig.Contexts[contextName]
+		if entry, ok := cfg.Contexts[contextName]; ok && entry.Namespace != "" {
+			ctxCopy := *singleCtx.Contexts[contextName]
+			ctxCopy.Namespace = entry.Namespace
+			singleCtx.Contexts[contextName] = &ctxCopy
+		}
 		singleCtx.Clusters[kubeconfig.Contexts[contextName].Cluster] = kubeconfig.Clusters[kubeconfig.Contexts[contextName].Cluster]
 		singleCtx.AuthInfos[kubeconfig.Contexts[contextName].AuthInfo] = kubeconfig.AuthInfos[kubeconfig.Contexts[contextName].AuthInfo]
 
@@ -167,7 +170,7 @@ var execCmd = &cobra.Command{
 
 		if err := c.Run(); err != nil {
 			if exitErr, ok := err.(*exec.ExitError); ok {
-				os.Exit(exitErr.ExitCode())
+				return fmt.Errorf("command exited with status %d", exitErr.ExitCode())
 			}
 			return fmt.Errorf("execute command: %w", err)
 		}
