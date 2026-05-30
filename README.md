@@ -90,8 +90,8 @@ ekconf use my-cluster
 ekconf ns my-namespace
 
 # Run a command with decrypted config injected via KUBECONFIG
-# Respects shell aliases, functions, and interactive features
-# (e.g. aliased kubectl, shell vars, pipes, fd redirects)
+# Respects shell aliases and functions. It's a drop-in replacement
+# for your normal shell (e.g. alias kubecolor=kubectl works)
 ekconf exec -- kubectl get pods
 ekconf exec staging -- kubectl get pods
 ```
