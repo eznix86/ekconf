@@ -2,9 +2,19 @@ name: Lint
 
 on:
   pull_request:
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - ".golangci.yml"
   push:
     branches:
       - main
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - ".golangci.yml"
 
 permissions:
   contents: read
