@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/eznix86/ekconf/internal/config"
@@ -746,6 +747,41 @@ func TestExec_PreservesChildExitCode(t *testing.T) {
 	} else {
 		t.Fatalf("expected exit code error, got %T", err)
 	}
+}
+
+func TestExec_CleanupTempRemovesFile(t *testing.T) {
+	tmpPath, cleanup, err := writeTempKubeconfig([]byte("test-data"))
+	require.NoError(t, err)
+
+	_, err = os.Stat(tmpPath)
+	require.NoError(t, err, "temp file should exist before cleanup")
+
+	err = cleanup()
+	require.NoError(t, err)
+
+	_, err = os.Stat(tmpPath)
+	assert.True(t, os.IsNotExist(err), "temp file should be removed after cleanup")
+}
+
+func TestExec_DoubleCleanupOnceNoPanic(t *testing.T) {
+	tmpPath, cleanup, err := writeTempKubeconfig([]byte("test-data"))
+	require.NoError(t, err)
+	require.FileExists(t, tmpPath)
+
+	var once sync.Once
+	once.Do(func() {
+		require.NoError(t, cleanup())
+	})
+
+	// Second call via sync.Once should be a no-op — no error, no panic
+	assert.NotPanics(t, func() {
+		once.Do(func() {
+			t.Error("sync.Once allowed second execution")
+		})
+	})
+
+	_, err = os.Stat(tmpPath)
+	assert.True(t, os.IsNotExist(err), "file should be gone after first cleanup")
 }
 
 func TestRm_NotFound(t *testing.T) {

@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
+	"sync"
+	"syscall"
 
 	"github.com/eznix86/ekconf/internal/config"
 	"github.com/spf13/cobra"
@@ -68,7 +71,7 @@ var execCmd = &cobra.Command{
 	Short: "Run a command with decrypted config injected via KUBECONFIG",
 	Long: `Run a command with the decrypted kubeconfig for a specific context injected
 via the KUBECONFIG environment variable. The temp file is wiped and deleted
-on exit, even on crash or SIGINT.
+on normal exit and on SIGINT/SIGTERM. SIGKILL, power loss, and kernel panic can still orphan the file.
 
 If no context name is given, the active context from config.yaml is used.
 Use -- to separate the context name from the command.`,
@@ -104,14 +107,29 @@ Use -- to separate the context name from the command.`,
 		if err != nil {
 			return err
 		}
+		var cleanupOnce sync.Once
+
 		defer func() {
-			if err := cleanupTemp(); err != nil {
-				if retErr == nil {
-					retErr = fmt.Errorf("cleanup temp kubeconfig: %w", err)
-					return
+			cleanupOnce.Do(func() {
+				if err := cleanupTemp(); err != nil {
+					if retErr == nil {
+						retErr = fmt.Errorf("cleanup temp kubeconfig: %w", err)
+						return
+					}
+					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: cleanup temp kubeconfig failed: %v\n", err)
 				}
-				fmt.Fprintf(cmd.ErrOrStderr(), "Warning: cleanup temp kubeconfig failed: %v\n", err)
-			}
+			})
+		}()
+
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+		go func() {
+			<-sigCh
+			signal.Stop(sigCh)
+			cleanupOnce.Do(func() {
+				_ = cleanupTemp()
+			})
+			os.Exit(1)
 		}()
 
 		c := buildExecCommand(req.commandArgs, tmpPath)
