@@ -10,6 +10,7 @@ import (
 
 	"github.com/eznix86/ekconf/internal/config"
 	"github.com/eznix86/ekconf/internal/crypto"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/client-go/tools/clientcmd"
@@ -32,7 +33,10 @@ func resetCommandTestState(t *testing.T) {
 	addName = ""
 	viewPlain = false
 	ejectForce = false
+	ejectMerge = false
 	execNoShell = false
+	resetBoolFlag(ejectCmd, "force", false)
+	resetBoolFlag(ejectCmd, "merge", false)
 	rootCmd.SetArgs(nil)
 	rootCmd.SetOut(os.Stdout)
 	rootCmd.SetErr(os.Stderr)
@@ -43,11 +47,27 @@ func resetCommandTestState(t *testing.T) {
 		addName = ""
 		viewPlain = false
 		ejectForce = false
+		ejectMerge = false
 		execNoShell = false
+		resetBoolFlag(ejectCmd, "force", false)
+		resetBoolFlag(ejectCmd, "merge", false)
 		rootCmd.SetArgs(nil)
 		rootCmd.SetOut(os.Stdout)
 		rootCmd.SetErr(os.Stderr)
 	})
+}
+
+func resetBoolFlag(cmd *cobra.Command, name string, value bool) {
+	flag := cmd.Flags().Lookup(name)
+	if flag == nil {
+		return
+	}
+	if value {
+		_ = flag.Value.Set("true")
+	} else {
+		_ = flag.Value.Set("false")
+	}
+	flag.Changed = false
 }
 
 func writeTestConfigYAML(t *testing.T, content string) {
@@ -1100,6 +1120,159 @@ func TestEject_WithNamesAndNoForceRequiresConfirmation(t *testing.T) {
 	err = executeCommand("eject", "test-cluster")
 	require.NoError(t, err)
 	assert.Contains(t, output(), "Aborted")
+}
+
+func TestEject_ExistingConfigWithoutForceWarnsAndAborts(t *testing.T) {
+	setupTestHome(t)
+	writeTestConfigYAML(t, "keychain: false\ncurrent: test-cluster\ncontexts:\n  test-cluster:\n    namespace: default\n")
+	writeTestConfigEnc(t, "test-password")
+
+	kubeDir := filepath.Join(os.Getenv("HOME"), ".kube")
+	require.NoError(t, os.MkdirAll(kubeDir, 0o700))
+	kubeConfigPath := filepath.Join(kubeDir, "config")
+	require.NoError(t, os.WriteFile(kubeConfigPath, []byte("existing"), 0o600))
+
+	passwordFlag = "test-password"
+	t.Cleanup(func() { passwordFlag = "" })
+
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	_, err = w.WriteString("no\n")
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
+	oldOpenTTY := openTTY
+	openTTY = func(name string, flag int, perm os.FileMode) (*os.File, error) {
+		return r, nil
+	}
+	t.Cleanup(func() { openTTY = oldOpenTTY })
+
+	output := captureOutput(t)
+
+	err = executeCommand("eject", "test-cluster")
+	require.NoError(t, err)
+	assert.Contains(t, output(), "Aborted")
+
+	data, err := os.ReadFile(kubeConfigPath)
+	require.NoError(t, err)
+	assert.Equal(t, "existing", string(data))
+}
+
+func TestEject_MergeAddsContextToExistingConfig(t *testing.T) {
+	setupTestHome(t)
+	writeTestConfigYAML(t, "keychain: false\ncurrent: test-cluster\ncontexts:\n  test-cluster:\n    namespace: default\n")
+	writeTestConfigEnc(t, "test-password")
+
+	kubeDir := filepath.Join(os.Getenv("HOME"), ".kube")
+	require.NoError(t, os.MkdirAll(kubeDir, 0o700))
+	kubeConfigPath := filepath.Join(kubeDir, "config")
+	existing := clientcmdapi.NewConfig()
+	existing.Contexts["existing"] = &clientcmdapi.Context{Cluster: "existing-cluster", AuthInfo: "existing-user"}
+	existing.Clusters["existing-cluster"] = &clientcmdapi.Cluster{Server: "https://existing.example.com"}
+	existing.AuthInfos["existing-user"] = &clientcmdapi.AuthInfo{Token: "existing-token"}
+	data, err := clientcmd.Write(*existing)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(kubeConfigPath, data, 0o600))
+
+	ejectForce = true
+	ejectMerge = true
+	passwordFlag = "test-password"
+	t.Cleanup(func() {
+		ejectForce = false
+		ejectMerge = false
+		passwordFlag = ""
+	})
+
+	err = executeCommand("eject", "test-cluster", "--merge", "--force")
+	require.NoError(t, err)
+
+	written, err := clientcmd.LoadFromFile(kubeConfigPath)
+	require.NoError(t, err)
+	assert.Contains(t, written.Contexts, "existing")
+	assert.Contains(t, written.Contexts, "test-cluster")
+	assert.Equal(t, "https://existing.example.com", written.Clusters["existing-cluster"].Server)
+	assert.Equal(t, "https://example.com:6443", written.Clusters["test-cluster"].Server)
+}
+
+func TestEject_MergeConflictSkippedWithoutConfirmation(t *testing.T) {
+	setupTestHome(t)
+	writeTestConfigYAML(t, "keychain: false\ncurrent: test-cluster\ncontexts:\n  test-cluster:\n    namespace: default\n")
+	writeTestConfigEnc(t, "test-password")
+
+	kubeDir := filepath.Join(os.Getenv("HOME"), ".kube")
+	require.NoError(t, os.MkdirAll(kubeDir, 0o700))
+	kubeConfigPath := filepath.Join(kubeDir, "config")
+	existing := clientcmdapi.NewConfig()
+	existing.Contexts["test-cluster"] = &clientcmdapi.Context{Cluster: "old-cluster", AuthInfo: "old-user"}
+	existing.Clusters["old-cluster"] = &clientcmdapi.Cluster{Server: "https://old.example.com"}
+	existing.AuthInfos["old-user"] = &clientcmdapi.AuthInfo{Token: "old-token"}
+	data, err := clientcmd.Write(*existing)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(kubeConfigPath, data, 0o600))
+
+	passwordFlag = "test-password"
+	t.Cleanup(func() { passwordFlag = "" })
+
+	responses := []string{"yes\n", "no\n"}
+	oldOpenTTY := openTTY
+	openTTY = func(name string, flag int, perm os.FileMode) (*os.File, error) {
+		if len(responses) == 0 {
+			return nil, io.EOF
+		}
+		r, w, err := os.Pipe()
+		require.NoError(t, err)
+		_, err = w.WriteString(responses[0])
+		require.NoError(t, err)
+		require.NoError(t, w.Close())
+		responses = responses[1:]
+		return r, nil
+	}
+	t.Cleanup(func() { openTTY = oldOpenTTY })
+
+	output := captureOutput(t)
+
+	err = executeCommand("eject", "test-cluster", "--merge")
+	require.NoError(t, err)
+	assert.Contains(t, output(), "Skipped context 'test-cluster'")
+
+	written, err := clientcmd.LoadFromFile(kubeConfigPath)
+	require.NoError(t, err)
+	assert.Equal(t, "old-cluster", written.Contexts["test-cluster"].Cluster)
+	assert.Equal(t, "https://old.example.com", written.Clusters["old-cluster"].Server)
+}
+
+func TestEject_MergeConflictForceReplacesContext(t *testing.T) {
+	setupTestHome(t)
+	writeTestConfigYAML(t, "keychain: false\ncurrent: test-cluster\ncontexts:\n  test-cluster:\n    namespace: default\n")
+	writeTestConfigEnc(t, "test-password")
+
+	kubeDir := filepath.Join(os.Getenv("HOME"), ".kube")
+	require.NoError(t, os.MkdirAll(kubeDir, 0o700))
+	kubeConfigPath := filepath.Join(kubeDir, "config")
+	existing := clientcmdapi.NewConfig()
+	existing.Contexts["test-cluster"] = &clientcmdapi.Context{Cluster: "old-cluster", AuthInfo: "old-user"}
+	existing.Clusters["old-cluster"] = &clientcmdapi.Cluster{Server: "https://old.example.com"}
+	existing.AuthInfos["old-user"] = &clientcmdapi.AuthInfo{Token: "old-token"}
+	data, err := clientcmd.Write(*existing)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(kubeConfigPath, data, 0o600))
+
+	ejectForce = true
+	ejectMerge = true
+	passwordFlag = "test-password"
+	t.Cleanup(func() {
+		ejectForce = false
+		ejectMerge = false
+		passwordFlag = ""
+	})
+
+	err = executeCommand("eject", "test-cluster", "--merge", "--force")
+	require.NoError(t, err)
+
+	written, err := clientcmd.LoadFromFile(kubeConfigPath)
+	require.NoError(t, err)
+	assert.Equal(t, "test-cluster", written.Contexts["test-cluster"].Cluster)
+	assert.Equal(t, "https://example.com:6443", written.Clusters["test-cluster"].Server)
 }
 
 func TestImport_NoSourceFile(t *testing.T) {

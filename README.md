@@ -75,7 +75,7 @@ ekconf add ~/path/to/kubeconfig.yaml -n my-cluster
 | `ekconf exec [<name>] -- <cmd>` | Run a command with decrypted KUBECONFIG |
 | `ekconf rotate` | Re-encrypt with a new password |
 | `ekconf import [--force]` | Import `~/.kube/config` into the encrypted store |
-| `ekconf eject [<name>...] [--force]` | Decrypt and write to `~/.kube/config` |
+| `ekconf eject [<name>...] [--merge] [--force]` | Decrypt and write or merge into `~/.kube/config` |
 | `ekconf config list` | View configuration (colorized with` yaml.colorize=true`) |
 | `ekconf config <key=value>` | Set a configuration option |
 | `ekconf update` | Self-update from GitHub Releases |
@@ -214,14 +214,15 @@ ekconf import                # import and keep the source
 ekconf import --force        # import and remove ~/.kube/config
 ```
 
-##### `ekconf eject [<name>...] [--force]`
+##### `ekconf eject [<name>...] [--merge] [--force]`
 
 Export contexts from the encrypted store back to plaintext `~/.kube/config`.
 
 ```sh
-ekconf eject                          # all contexts
-ekconf eject prod                     # single context
-ekconf eject staging prod --force     # multiple, skip prompt
+ekconf eject                                  # all contexts, overwrite prompt
+ekconf eject prod                             # single context, overwrite prompt
+ekconf eject staging prod --merge             # merge into existing config
+ekconf eject staging prod --merge --force     # merge and replace conflicts
 ```
 
 ## License
