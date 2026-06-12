@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -104,6 +105,7 @@ Use -- to separate the context name from the command.`,
 		}
 
 		tmpPath, cleanupTemp, err := writeTempKubeconfig(out)
+		clear(out)
 		if err != nil {
 			return err
 		}
@@ -238,30 +240,55 @@ func singleContextKubeconfig(
 }
 
 func writeTempKubeconfig(data []byte) (string, func() error, error) {
-	tmpFile, err := os.CreateTemp(tempDir(), "ekconf-*.kubeconfig")
+	tmpDir, err := os.MkdirTemp(tempDir(), "ekconf-*")
 	if err != nil {
-		return "", nil, fmt.Errorf("create temp file: %w", err)
+		return "", nil, fmt.Errorf("create temp dir: %w", err)
 	}
-	tmpPath := tmpFile.Name()
-	cleanup := func() error {
-		if err := wipeFile(tmpPath); err != nil {
-			return err
-		}
-		if err := os.Remove(tmpPath); err != nil && !os.IsNotExist(err) {
-			return err
-		}
-		return nil
+	if err := os.Chmod(tmpDir, 0o700); err != nil {
+		_ = os.RemoveAll(tmpDir)
+		return "", nil, fmt.Errorf("chmod temp dir: %w", err)
 	}
 
-	if _, err := tmpFile.Write(data); err != nil {
+	tmpPath := filepath.Join(tmpDir, "config")
+	tmpFile, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		_ = os.RemoveAll(tmpDir)
+		return "", nil, fmt.Errorf("create temp kubeconfig: %w", err)
+	}
+	cleanup := func() error {
+		var cleanupErr error
+		if err := wipeFile(tmpPath); err != nil && !os.IsNotExist(err) {
+			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("wipe temp kubeconfig: %w", err))
+		}
+		if err := os.Remove(tmpPath); err != nil && !os.IsNotExist(err) {
+			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("remove temp kubeconfig: %w", err))
+		}
+		if err := os.Remove(tmpDir); err != nil && !os.IsNotExist(err) {
+			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("remove temp dir: %w", err))
+		}
+		return cleanupErr
+	}
+
+	writtenBytes, err := tmpFile.Write(data)
+	if err != nil {
 		_ = tmpFile.Close()
 		_ = cleanup()
 		return "", nil, fmt.Errorf("write temp file: %w", err)
+	}
+	if writtenBytes != len(data) {
+		_ = tmpFile.Close()
+		_ = cleanup()
+		return "", nil, fmt.Errorf("write temp file: short write")
 	}
 	if err := tmpFile.Chmod(0o600); err != nil {
 		_ = tmpFile.Close()
 		_ = cleanup()
 		return "", nil, fmt.Errorf("chmod temp file: %w", err)
+	}
+	if err := tmpFile.Sync(); err != nil {
+		_ = tmpFile.Close()
+		_ = cleanup()
+		return "", nil, fmt.Errorf("sync temp file: %w", err)
 	}
 	if err := tmpFile.Close(); err != nil {
 		_ = cleanup()
