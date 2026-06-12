@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -41,7 +42,7 @@ A confirmation prompt is shown unless --force is passed.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ejectAll := len(args) == 0
 
-		password, err := resolvePassword()
+		password, err := resolvePassword(cmd.Context())
 		if err != nil {
 			return err
 		}
@@ -126,15 +127,16 @@ func confirmEject(cmd *cobra.Command, kubeConfigPath string, contextCount int) (
 	}
 
 	var msg string
-	if ejectMerge {
+	switch {
+	case ejectMerge:
 		msg = fmt.Sprintf("This will merge %d context(s) into ~/.kube/config. Continue? [y/N]: ", contextCount)
-	} else if exists {
+	case exists:
 		msg = "~/.kube/config already exists. This will overwrite it. Continue? [y/N]: "
-	} else {
+	default:
 		msg = fmt.Sprintf("This will write %d context(s) to ~/.kube/config. Continue? [y/N]: ", contextCount)
 	}
 
-	confirmed, err := promptConfirmation(cmd.ErrOrStderr(), msg)
+	confirmed, err := promptConfirmation(cmd.Context(), cmd.ErrOrStderr(), msg)
 	if err != nil {
 		return false, err
 	}
@@ -162,6 +164,7 @@ func mergeEjectedKubeconfig(
 	for name, ctx := range ejected.Contexts {
 		if _, exists := existing.Contexts[name]; exists && !ejectForce {
 			confirmed, err := promptConfirmation(
+				cmd.Context(),
 				cmd.ErrOrStderr(),
 				fmt.Sprintf("Context '%s' already exists in ~/.kube/config. Replace it? [y/N]: ", name),
 			)
@@ -216,7 +219,11 @@ func filterKubeconfig(kubeconfig *clientcmdapi.Config, names []string) (*clientc
 	return filtered, nil
 }
 
-func promptConfirmation(w io.Writer, message string) (bool, error) {
+func promptConfirmation(ctx context.Context, w io.Writer, message string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, fmt.Errorf("prompt confirmation: %w", err)
+	}
+
 	tty, err := openTTY("/dev/tty", os.O_RDONLY, 0)
 	if err != nil {
 		return false, fmt.Errorf("prompt confirmation: %w", err)

@@ -95,12 +95,12 @@ func shouldUseKeychain() bool {
 	return cfg.Keychain
 }
 
-func resolvePassword() (string, error) {
-	return resolvePasswordWithKeychain(shouldUseKeychain())
+func resolvePassword(ctx context.Context) (string, error) {
+	return resolvePasswordWithKeychain(ctx, shouldUseKeychain())
 }
 
-func resolvePasswordWithKeychain(useKeychain bool) (string, error) {
-	return password.Resolve(passwordFlag, passwordStdin, useKeychain, envPassword)
+func resolvePasswordWithKeychain(ctx context.Context, useKeychain bool) (string, error) {
+	return password.Resolve(ctx, passwordFlag, passwordStdin, useKeychain, envPassword)
 }
 
 func shouldRecoverPendingFileTransaction(cmd *cobra.Command) bool {

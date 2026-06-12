@@ -31,7 +31,7 @@ by default. Use --plain to include all fields.`,
 			return fmt.Errorf("load config: %w", err)
 		}
 
-		password, err := resolvePassword()
+		password, err := resolvePassword(cmd.Context())
 		if err != nil {
 			return err
 		}

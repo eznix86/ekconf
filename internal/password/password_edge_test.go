@@ -48,7 +48,7 @@ func TestCurrentUser_Fallback(t *testing.T) {
 }
 
 func TestResolve_FailsWithNoSources(t *testing.T) {
-	_, err := Resolve("", false, false, "")
+	_, err := Resolve(t.Context(), "", false, false, "")
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "not a terminal")
 }
@@ -65,7 +65,7 @@ func TestResolve_StdinPiped(t *testing.T) {
 	os.Stdin = r
 	t.Cleanup(func() { os.Stdin = oldStdin })
 
-	pw, err := Resolve("", true, false, "")
+	pw, err := Resolve(t.Context(), "", true, false, "")
 	require.NoError(t, err)
 	assert.Equal(t, "pipe-password", pw)
 }
@@ -76,13 +76,13 @@ func TestResolve_KeychainFallback(t *testing.T) {
 	lookupCurrentUser = func() (*user.User, error) { return nil, fmt.Errorf("boom") }
 	t.Cleanup(func() { lookupCurrentUser = oldLookup })
 
-	_, err := Resolve("", false, true, "")
+	_, err := Resolve(t.Context(), "", false, true, "")
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "not a terminal")
 }
 
 func TestResolve_KeychainFallbackSkippedWithFlag(t *testing.T) {
-	pw, err := Resolve("my-pass", false, true, "")
+	pw, err := Resolve(t.Context(), "my-pass", false, true, "")
 	require.NoError(t, err)
 	assert.Equal(t, "my-pass", pw)
 }

@@ -35,7 +35,7 @@ is shown.`,
 			return fmt.Errorf("stat %s: %w", srcPath, err)
 		}
 
-		password, err := resolvePassword()
+		password, err := resolvePassword(cmd.Context())
 		if err != nil {
 			return err
 		}
