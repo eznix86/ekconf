@@ -43,7 +43,7 @@ encryption at rest and optional keychain integration.`,
 		if err := config.EnsureDir(); err != nil {
 			return err
 		}
-		if cmd.Flags().Changed("password") || passwordStdin || cmd.Name() == "exec" || cmd.Name() == "add" || cmd.Name() == "rm" || cmd.Name() == "eject" || cmd.Name() == "rotate" || cmd.Name() == "view" {
+		if shouldRecoverPendingFileTransaction(cmd) {
 			return recoverPendingFileTransaction()
 		}
 		return nil
@@ -101,6 +101,19 @@ func resolvePassword() (string, error) {
 
 func resolvePasswordWithKeychain(useKeychain bool) (string, error) {
 	return password.Resolve(passwordFlag, passwordStdin, useKeychain, envPassword)
+}
+
+func shouldRecoverPendingFileTransaction(cmd *cobra.Command) bool {
+	if cmd.Flags().Changed("password") || passwordStdin {
+		return true
+	}
+
+	switch cmd.Name() {
+	case "add", "eject", "exec", "migrate", "rm", "rotate", "view":
+		return true
+	default:
+		return false
+	}
 }
 
 func completeContext(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {

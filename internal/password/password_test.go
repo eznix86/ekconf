@@ -1,12 +1,23 @@
 package password
 
 import (
+	"errors"
 	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestMain(m *testing.M) {
+	oldOpenTTY := openTTY
+	openTTY = func(name string, flag int, perm os.FileMode) (*os.File, error) {
+		return nil, errors.New("tty disabled in test")
+	}
+	code := m.Run()
+	openTTY = oldOpenTTY
+	os.Exit(code)
+}
 
 func TestResolve_PasswordFlag(t *testing.T) {
 	pw, err := Resolve("my-password", false, false, "")

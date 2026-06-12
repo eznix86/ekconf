@@ -22,6 +22,7 @@ d88' `88b  888 .8P'   d88' `"Y8 d88' `88b `888P"Y88b   888
 Encrypted kubeconfig manager. Inspired by
 [`particledecay/kconf`](https://github.com/particledecay/kconf) which stores
 kubeconfigs in plaintext. `ekconf` keeps them encrypted at rest using
+[`go-secretbox`](https://github.com/floatpane/go-secretbox), which provides
 AES-256-GCM and Argon2id, with optional macOS Keychain and Linux Keyring
 integration.
 
@@ -74,6 +75,7 @@ ekconf add ~/path/to/kubeconfig.yaml -n my-cluster
 | `ekconf ns <namespace>` | Set default namespace on the active context |
 | `ekconf exec [<name>] -- <cmd>` | Run a command with decrypted KUBECONFIG |
 | `ekconf rotate` | Re-encrypt with a new password |
+| `ekconf migrate` | Migrate `config.enc` to the current encrypted format |
 | `ekconf import [--force]` | Import `~/.kube/config` into the encrypted store |
 | `ekconf eject [<name>...] [--merge] [--force]` | Decrypt and write or merge into `~/.kube/config` |
 | `ekconf config list` | View configuration (colorized with` yaml.colorize=true`) |

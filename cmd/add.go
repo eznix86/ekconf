@@ -91,12 +91,7 @@ func loadExistingKubeconfig(password string) (*clientcmdapi.Config, error) {
 		return nil, fmt.Errorf("read config.enc: %w", err)
 	}
 
-	ef, err := crypto.Unmarshal(data)
-	if err != nil {
-		return nil, fmt.Errorf("parse encrypted file: %w", err)
-	}
-
-	plaintext, err := crypto.Decrypt(ef, password)
+	plaintext, err := crypto.Open(data, password)
 	if err != nil {
 		return nil, fmt.Errorf("decrypt config.enc: %w (wrong password?)", err)
 	}
@@ -198,7 +193,7 @@ func writeMergedKubeconfig(cfg *config.Config, kubeconfig *clientcmdapi.Config, 
 		return fmt.Errorf("marshal merged kubeconfig: %w", err)
 	}
 
-	ef, err := crypto.Encrypt(mergedData, password)
+	encryptedData, err := crypto.Seal(mergedData, password)
 	if err != nil {
 		return fmt.Errorf("encrypt: %w", err)
 	}
@@ -218,7 +213,7 @@ func writeMergedKubeconfig(cfg *config.Config, kubeconfig *clientcmdapi.Config, 
 	}
 
 	return replaceFilesAtomically([]fileUpdate{
-		{path: encPath, data: crypto.Marshal(ef)},
+		{path: encPath, data: encryptedData},
 		{path: configPath, data: cfgData},
 	})
 }
