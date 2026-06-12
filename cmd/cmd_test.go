@@ -772,6 +772,7 @@ func TestExec_PreservesChildExitCode(t *testing.T) {
 func TestExec_CleanupTempRemovesFile(t *testing.T) {
 	tmpPath, cleanup, err := writeTempKubeconfig([]byte("test-data"))
 	require.NoError(t, err)
+	tmpDir := filepath.Dir(tmpPath)
 
 	_, err = os.Stat(tmpPath)
 	require.NoError(t, err, "temp file should exist before cleanup")
@@ -781,6 +782,23 @@ func TestExec_CleanupTempRemovesFile(t *testing.T) {
 
 	_, err = os.Stat(tmpPath)
 	assert.True(t, os.IsNotExist(err), "temp file should be removed after cleanup")
+	_, err = os.Stat(tmpDir)
+	assert.True(t, os.IsNotExist(err), "temp dir should be removed after cleanup")
+}
+
+func TestExec_TempKubeconfigPrivatePath(t *testing.T) {
+	tmpPath, cleanup, err := writeTempKubeconfig([]byte("test-data"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, cleanup()) })
+
+	fileInfo, err := os.Stat(tmpPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o600), fileInfo.Mode().Perm())
+
+	dirInfo, err := os.Stat(filepath.Dir(tmpPath))
+	require.NoError(t, err)
+	assert.True(t, dirInfo.IsDir())
+	assert.Equal(t, os.FileMode(0o700), dirInfo.Mode().Perm())
 }
 
 func TestExec_DoubleCleanupOnceNoPanic(t *testing.T) {
