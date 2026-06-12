@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -16,6 +17,16 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
+
+func TestMain(m *testing.M) {
+	oldOpenTTY := openTTY
+	openTTY = func(name string, flag int, perm os.FileMode) (*os.File, error) {
+		return nil, errors.New("tty disabled in test")
+	}
+	code := m.Run()
+	openTTY = oldOpenTTY
+	os.Exit(code)
+}
 
 func setupTestHome(t *testing.T) string {
 	t.Helper()
@@ -820,6 +831,69 @@ func TestExec_DoubleCleanupOnceNoPanic(t *testing.T) {
 
 	_, err = os.Stat(tmpPath)
 	assert.True(t, os.IsNotExist(err), "file should be gone after first cleanup")
+}
+
+func TestMigrate_LegacyConfigEnc(t *testing.T) {
+	setupTestHome(t)
+	writeTestConfigYAML(t, "keychain: false\ncurrent: test-cluster\ncontexts:\n  test-cluster:\n    namespace: default\n")
+	writeTestConfigEnc(t, "test-password")
+
+	encPath := filepath.Join(os.Getenv("HOME"), ".ekube", "config.enc")
+	before, err := os.ReadFile(encPath)
+	require.NoError(t, err)
+	require.False(t, crypto.IsSecretBox(before))
+
+	passwordFlag = "test-password"
+	t.Cleanup(func() { passwordFlag = "" })
+
+	output := captureOutput(t)
+
+	err = executeCommand("migrate")
+	require.NoError(t, err)
+	gotOutput := output()
+	assert.Contains(t, gotOutput, "Migrated config.enc")
+	assert.Contains(t, gotOutput, "Legacy backup:")
+
+	after, err := os.ReadFile(encPath)
+	require.NoError(t, err)
+	require.True(t, crypto.IsSecretBox(after))
+	assert.NotEqual(t, before, after)
+
+	backup, err := os.ReadFile(encPath + ".v0.bak")
+	require.NoError(t, err)
+	assert.Equal(t, before, backup)
+
+	kubeconfig, err := loadDecryptedKubeconfig("test-password")
+	require.NoError(t, err)
+	assert.Contains(t, kubeconfig.Contexts, "test-cluster")
+}
+
+func TestMigrate_CurrentFormatNoPasswordNeeded(t *testing.T) {
+	setupTestHome(t)
+	writeTestConfigYAML(t, "keychain: false\ncurrent: test-cluster\ncontexts:\n  test-cluster:\n    namespace: default\n")
+
+	kc := clientcmdapi.NewConfig()
+	kc.CurrentContext = "test-cluster"
+	kc.Contexts["test-cluster"] = &clientcmdapi.Context{Cluster: "test-cluster", AuthInfo: "test-user"}
+	kc.Clusters["test-cluster"] = &clientcmdapi.Cluster{Server: "https://example.com:6443"}
+	kc.AuthInfos["test-user"] = &clientcmdapi.AuthInfo{Token: "test-token"}
+	data, err := clientcmd.Write(*kc)
+	require.NoError(t, err)
+
+	encryptedData, err := crypto.Seal(data, "test-password")
+	require.NoError(t, err)
+	encPath := filepath.Join(os.Getenv("HOME"), ".ekube", "config.enc")
+	require.NoError(t, os.WriteFile(encPath, encryptedData, 0o600))
+
+	output := captureOutput(t)
+
+	err = executeCommand("migrate")
+	require.NoError(t, err)
+	assert.Contains(t, output(), "already uses the current encrypted format")
+
+	after, err := os.ReadFile(encPath)
+	require.NoError(t, err)
+	assert.Equal(t, encryptedData, after)
 }
 
 func TestRm_NotFound(t *testing.T) {

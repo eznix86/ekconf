@@ -17,7 +17,10 @@ const keyringService = "ekconf"
 
 const noTTYPasswordMessage = "not a terminal and no password provided via --password, --password-stdin, or EKCONF_PASSWORD"
 
-var lookupCurrentUser = user.Current
+var (
+	lookupCurrentUser = user.Current
+	openTTY           = os.OpenFile
+)
 
 func Resolve(passwordFlag string, passwordStdin, useKeychain bool, envPassword string) (string, error) {
 	if passwordFlag != "" {
@@ -55,7 +58,7 @@ func Delete() error {
 }
 
 func promptPassword(useKeychain bool) (string, error) {
-	tty, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0)
+	tty, err := openTTY("/dev/tty", os.O_RDONLY, 0)
 	if err != nil {
 		if useKeychain {
 			return "", fmt.Errorf(noTTYPasswordMessage + ", or keychain")
@@ -74,7 +77,7 @@ func promptPassword(useKeychain bool) (string, error) {
 }
 
 func PromptNewPassword() (string, error) {
-	tty, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0)
+	tty, err := openTTY("/dev/tty", os.O_RDONLY, 0)
 	if err != nil {
 		return "", errors.New(noTTYPasswordMessage)
 	}

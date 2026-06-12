@@ -58,7 +58,7 @@ var rmCmd = &cobra.Command{
 			return fmt.Errorf("marshal kubeconfig: %w", err)
 		}
 
-		ef2, err := crypto.Encrypt(mergedData, password)
+		encryptedData, err := crypto.Seal(mergedData, password)
 		if err != nil {
 			return fmt.Errorf("encrypt: %w", err)
 		}
@@ -74,7 +74,7 @@ var rmCmd = &cobra.Command{
 		}
 
 		if err := replaceFilesAtomically([]fileUpdate{
-			{path: encPath, data: crypto.Marshal(ef2)},
+			{path: encPath, data: encryptedData},
 			{path: configPath, data: cfgData},
 		}); err != nil {
 			return err

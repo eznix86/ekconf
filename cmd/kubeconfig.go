@@ -21,12 +21,7 @@ func readDecryptedConfigData(password string) ([]byte, error) {
 		return nil, fmt.Errorf("read config.enc: %w", err)
 	}
 
-	ef, err := crypto.Unmarshal(data)
-	if err != nil {
-		return nil, fmt.Errorf("parse encrypted file: %w", err)
-	}
-
-	plaintext, err := crypto.Decrypt(ef, password)
+	plaintext, err := crypto.Open(data, password)
 	if err != nil {
 		return nil, fmt.Errorf("decrypt (wrong password?): %w", err)
 	}

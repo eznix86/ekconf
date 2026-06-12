@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 
+	secretbox "github.com/floatpane/go-secretbox"
 	"golang.org/x/crypto/argon2"
 )
 
@@ -18,6 +19,8 @@ const (
 	ArgonTime    = 3
 	ArgonThreads = 4
 	ArgonKeyLen  = 32
+
+	secretBoxMagic = "SBX1"
 )
 
 type EncryptedFile struct {
@@ -42,6 +45,7 @@ func Encrypt(plaintext []byte, password string) (*EncryptedFile, error) {
 	}
 
 	key := deriveKey(password, salt)
+	defer clear(key)
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -64,6 +68,7 @@ func Encrypt(plaintext []byte, password string) (*EncryptedFile, error) {
 
 func Decrypt(ef *EncryptedFile, password string) ([]byte, error) {
 	key := deriveKey(password, ef.Salt)
+	defer clear(key)
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -81,6 +86,59 @@ func Decrypt(ef *EncryptedFile, password string) ([]byte, error) {
 	}
 
 	return plaintext, nil
+}
+
+func Seal(plaintext []byte, password string) ([]byte, error) {
+	blob, err := secretbox.Seal(plaintext, password)
+	if err != nil {
+		return nil, fmt.Errorf("seal: %w", err)
+	}
+	return blob, nil
+}
+
+func Open(data []byte, password string) ([]byte, error) {
+	if IsSecretBox(data) {
+		plaintext, err := secretbox.Unseal(data, password)
+		if err != nil {
+			return nil, fmt.Errorf("unseal: %w", err)
+		}
+		return plaintext, nil
+	}
+
+	ef, err := Unmarshal(data)
+	if err != nil {
+		return nil, fmt.Errorf("parse legacy encrypted file: %w", err)
+	}
+
+	plaintext, err := Decrypt(ef, password)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt legacy encrypted file: %w", err)
+	}
+
+	return plaintext, nil
+}
+
+func Migrate(data []byte, password string) ([]byte, bool, error) {
+	if IsSecretBox(data) {
+		return nil, false, nil
+	}
+
+	plaintext, err := Open(data, password)
+	if err != nil {
+		return nil, false, err
+	}
+	defer clear(plaintext)
+
+	blob, err := Seal(plaintext, password)
+	if err != nil {
+		return nil, false, err
+	}
+
+	return blob, true, nil
+}
+
+func IsSecretBox(data []byte) bool {
+	return len(data) >= len(secretBoxMagic) && string(data[:len(secretBoxMagic)]) == secretBoxMagic
 }
 
 func Marshal(ef *EncryptedFile) []byte {

@@ -38,13 +38,13 @@ var rotateCmd = &cobra.Command{
 			return err
 		}
 
-		efNew, err := crypto.Encrypt(plaintext, newPassword)
+		encryptedData, err := crypto.Seal(plaintext, newPassword)
 		if err != nil {
 			return fmt.Errorf("encrypt: %w", err)
 		}
 
 		tmpPath := encPath + ".tmp"
-		if err := os.WriteFile(tmpPath, crypto.Marshal(efNew), 0o600); err != nil {
+		if err := os.WriteFile(tmpPath, encryptedData, 0o600); err != nil {
 			os.Remove(tmpPath)
 			return fmt.Errorf("write temp file: %w", err)
 		}

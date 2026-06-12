@@ -88,13 +88,9 @@ func TestResolve_KeychainFallbackSkippedWithFlag(t *testing.T) {
 }
 
 func TestStoreDelete_NoPanic(t *testing.T) {
+	keyring.MockInit()
+
 	err := Store("test-password")
-	if err != nil {
-		t.Logf("Store failed (expected on Linux without keyring): %v", err)
-	} else {
-		err = Delete()
-		if err != nil {
-			t.Logf("Delete failed: %v", err)
-		}
-	}
+	require.NoError(t, err)
+	require.NoError(t, Delete())
 }
