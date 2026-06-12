@@ -10,7 +10,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/crypto v0.52.0
-	golang.org/x/mod v0.36.0
+	golang.org/x/mod v0.37.0
 	golang.org/x/term v0.43.0
 	k8s.io/client-go v0.36.1
 	sigs.k8s.io/yaml v1.6.0
