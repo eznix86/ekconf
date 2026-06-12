@@ -100,7 +100,13 @@ func replaceFilesAtomically(updates []fileUpdate) (retErr error) {
 		return fmt.Errorf("write transaction journal: %w", err)
 	}
 
-	tempPaths := make([]string, len(updates))
+	tempPaths := make([]string, 0, len(updates))
+	defer func() {
+		for _, tempPath := range tempPaths {
+			_ = os.Remove(tempPath)
+		}
+	}()
+
 	for i := range updates {
 		tmp, err := createTempFile(filepath.Dir(updates[i].path), ".ekconf-*")
 		if err != nil {
@@ -118,8 +124,7 @@ func replaceFilesAtomically(updates []fileUpdate) (retErr error) {
 			removeErr := os.Remove(tmp.Name())
 			return fmt.Errorf("close temp file for %s: %w", updates[i].path, errors.Join(err, removeErr))
 		}
-		tempPaths[i] = tmp.Name()
-		defer os.Remove(tmp.Name())
+		tempPaths = append(tempPaths, tmp.Name())
 	}
 
 	rollback := func(failedAt int) error {

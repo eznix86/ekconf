@@ -9,22 +9,41 @@ linters:
   default: none
   enable:
     - bodyclose
+    - copyloopvar
+    - durationcheck
     - errcheck
+    - errname
     - errorlint
+    - forcetypeassert
+    - gocritic
+    - gosec
     - govet
     - ineffassign
     - misspell
+    - makezero
     - nilerr
+    - nilnil
+    - noctx
     - nolintlint
+    - predeclared
     - revive
     - staticcheck
     - testifylint
+    - unparam
+    - unconvert
     - unused
     - wastedassign
   settings:
     errcheck:
       check-type-assertions: true
       check-blank: false
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+      disabled-checks:
+        - hugeParam
+        - rangeValCopy
     govet:
       enable-all: true
       disable:
@@ -61,6 +80,10 @@ linters:
       - common-false-positives
       - legacy
       - std-error-handling
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
 
 formatters:
   enable:

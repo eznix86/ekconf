@@ -35,7 +35,7 @@ var migrateCmd = &cobra.Command{
 			return err
 		}
 
-		password, err := resolvePassword()
+		password, err := resolvePassword(cmd.Context())
 		if err != nil {
 			return err
 		}

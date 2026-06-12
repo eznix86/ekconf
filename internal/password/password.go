@@ -1,6 +1,8 @@
 package password
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -22,7 +24,7 @@ var (
 	openTTY           = os.OpenFile
 )
 
-func Resolve(passwordFlag string, passwordStdin, useKeychain bool, envPassword string) (string, error) {
+func Resolve(ctx context.Context, passwordFlag string, passwordStdin, useKeychain bool, envPassword string) (string, error) {
 	if passwordFlag != "" {
 		return passwordFlag, nil
 	}
@@ -46,7 +48,7 @@ func Resolve(passwordFlag string, passwordStdin, useKeychain bool, envPassword s
 		}
 	}
 
-	return promptPassword(useKeychain)
+	return promptPassword(ctx, useKeychain)
 }
 
 func Store(password string) error {
@@ -57,7 +59,11 @@ func Delete() error {
 	return keyring.Delete(keyringService, currentUser())
 }
 
-func promptPassword(useKeychain bool) (string, error) {
+func promptPassword(ctx context.Context, useKeychain bool) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
 	tty, err := openTTY("/dev/tty", os.O_RDONLY, 0)
 	if err != nil {
 		if useKeychain {
@@ -73,10 +79,16 @@ func promptPassword(useKeychain bool) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read password: %w", err)
 	}
+	defer clear(bytePW)
+
 	return string(bytePW), nil
 }
 
-func PromptNewPassword() (string, error) {
+func PromptNewPassword(ctx context.Context) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
 	tty, err := openTTY("/dev/tty", os.O_RDONLY, 0)
 	if err != nil {
 		return "", errors.New(noTTYPasswordMessage)
@@ -89,6 +101,7 @@ func PromptNewPassword() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read new password: %w", err)
 	}
+	defer clear(pw)
 
 	fmt.Fprint(os.Stderr, "Confirm new password: ")
 	confirm, err := term.ReadPassword(int(tty.Fd()))
@@ -96,8 +109,9 @@ func PromptNewPassword() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read confirm: %w", err)
 	}
+	defer clear(confirm)
 
-	if string(pw) != string(confirm) {
+	if !bytes.Equal(pw, confirm) {
 		return "", fmt.Errorf("passwords do not match")
 	}
 

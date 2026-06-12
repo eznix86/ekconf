@@ -28,12 +28,11 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func setupTestHome(t *testing.T) string {
+func setupTestHome(t *testing.T) {
 	t.Helper()
 	resetCommandTestState(t)
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
-	return dir
 }
 
 func resetCommandTestState(t *testing.T) {
@@ -46,8 +45,8 @@ func resetCommandTestState(t *testing.T) {
 	ejectForce = false
 	ejectMerge = false
 	execNoShell = false
-	resetBoolFlag(ejectCmd, "force", false)
-	resetBoolFlag(ejectCmd, "merge", false)
+	resetBoolFlag(ejectCmd, "force")
+	resetBoolFlag(ejectCmd, "merge")
 	rootCmd.SetArgs(nil)
 	rootCmd.SetOut(os.Stdout)
 	rootCmd.SetErr(os.Stderr)
@@ -60,24 +59,20 @@ func resetCommandTestState(t *testing.T) {
 		ejectForce = false
 		ejectMerge = false
 		execNoShell = false
-		resetBoolFlag(ejectCmd, "force", false)
-		resetBoolFlag(ejectCmd, "merge", false)
+		resetBoolFlag(ejectCmd, "force")
+		resetBoolFlag(ejectCmd, "merge")
 		rootCmd.SetArgs(nil)
 		rootCmd.SetOut(os.Stdout)
 		rootCmd.SetErr(os.Stderr)
 	})
 }
 
-func resetBoolFlag(cmd *cobra.Command, name string, value bool) {
+func resetBoolFlag(cmd *cobra.Command, name string) {
 	flag := cmd.Flags().Lookup(name)
 	if flag == nil {
 		return
 	}
-	if value {
-		_ = flag.Value.Set("true")
-	} else {
-		_ = flag.Value.Set("false")
-	}
+	_ = flag.Value.Set("false")
 	flag.Changed = false
 }
 
@@ -88,7 +83,7 @@ func writeTestConfigYAML(t *testing.T, content string) {
 	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
 }
 
-func writeTestConfigEnc(t *testing.T, password string) {
+func writeTestConfigEnc(t *testing.T) {
 	t.Helper()
 	kc := clientcmdapi.NewConfig()
 	kc.CurrentContext = "test-cluster"
@@ -122,7 +117,7 @@ func writeTestConfigEnc(t *testing.T, password string) {
 	data, err := clientcmd.Write(*kc)
 	require.NoError(t, err)
 
-	ef, err := crypto.Encrypt(data, password)
+	ef, err := crypto.Encrypt(data, "test-password")
 	require.NoError(t, err)
 
 	encPath := filepath.Join(os.Getenv("HOME"), ".ekube", "config.enc")
@@ -224,7 +219,7 @@ func TestResolvePassword_PasswordFlag(t *testing.T) {
 	passwordFlag = "test-pass"
 	t.Cleanup(func() { passwordFlag = "" })
 
-	pw, err := resolvePasswordWithKeychain(false)
+	pw, err := resolvePasswordWithKeychain(t.Context(), false)
 	require.NoError(t, err)
 	assert.Equal(t, "test-pass", pw)
 }
@@ -590,7 +585,7 @@ func TestConfig_InvalidKeychainValue(t *testing.T) {
 func TestView_WithPassword(t *testing.T) {
 	setupTestHome(t)
 	writeTestConfigYAML(t, "keychain: false\ncurrent: test-cluster\ncontexts:\n  test-cluster:\n    namespace: default\n")
-	writeTestConfigEnc(t, "test-password")
+	writeTestConfigEnc(t)
 
 	passwordFlag = "test-password"
 	t.Cleanup(func() { passwordFlag = "" })
@@ -613,7 +608,7 @@ func TestView_WithPassword(t *testing.T) {
 func TestView_PlainIncludesSensitiveData(t *testing.T) {
 	setupTestHome(t)
 	writeTestConfigYAML(t, "keychain: false\ncurrent: test-cluster\ncontexts:\n  test-cluster:\n    namespace: default\n")
-	writeTestConfigEnc(t, "test-password")
+	writeTestConfigEnc(t)
 
 	passwordFlag = "test-password"
 	viewPlain = true
@@ -639,7 +634,7 @@ func TestView_PlainIncludesSensitiveData(t *testing.T) {
 func TestView_NonexistentContext(t *testing.T) {
 	setupTestHome(t)
 	writeTestConfigYAML(t, "keychain: false\ncurrent: test-cluster\ncontexts:\n  test-cluster:\n    namespace: default\n")
-	writeTestConfigEnc(t, "test-password")
+	writeTestConfigEnc(t)
 
 	passwordFlag = "test-password"
 	t.Cleanup(func() { passwordFlag = "" })
@@ -652,7 +647,7 @@ func TestView_NonexistentContext(t *testing.T) {
 func TestEject_Force(t *testing.T) {
 	setupTestHome(t)
 	writeTestConfigYAML(t, "keychain: false\ncurrent: test-cluster\ncontexts:\n  test-cluster:\n    namespace: default\n")
-	writeTestConfigEnc(t, "test-password")
+	writeTestConfigEnc(t)
 
 	passwordFlag = "test-password"
 	ejectForce = true
@@ -697,7 +692,7 @@ func TestPromptConfirmation_FromTTY(t *testing.T) {
 	}
 	t.Cleanup(func() { openTTY = oldOpenTTY })
 
-	ok, err := promptConfirmation(io.Discard, "Continue? [y/N]: ")
+	ok, err := promptConfirmation(t.Context(), io.Discard, "Continue? [y/N]: ")
 	require.NoError(t, err)
 	assert.True(t, ok)
 }
@@ -713,7 +708,7 @@ func TestExec_NoCommand(t *testing.T) {
 func TestExec_WithPasswordFlag(t *testing.T) {
 	setupTestHome(t)
 	writeTestConfigYAML(t, "keychain: false\ncurrent: test-cluster\ncontexts:\n  test-cluster:\n    namespace: default\n")
-	writeTestConfigEnc(t, "test-password")
+	writeTestConfigEnc(t)
 
 	passwordFlag = "test-password"
 	t.Cleanup(func() { passwordFlag = "" })
@@ -729,7 +724,7 @@ func TestExec_WithPasswordFlag(t *testing.T) {
 func TestExec_SpecificContext(t *testing.T) {
 	setupTestHome(t)
 	writeTestConfigYAML(t, "keychain: false\ncurrent: test-cluster\ncontexts:\n  test-cluster:\n    namespace: default\n  staging:\n    namespace: staging\n")
-	writeTestConfigEnc(t, "test-password")
+	writeTestConfigEnc(t)
 
 	passwordFlag = "test-password"
 	t.Cleanup(func() { passwordFlag = "" })
@@ -766,7 +761,7 @@ func TestExec_NoActiveContext(t *testing.T) {
 func TestExec_PreservesChildExitCode(t *testing.T) {
 	setupTestHome(t)
 	writeTestConfigYAML(t, "keychain: false\ncurrent: test-cluster\ncontexts:\n  test-cluster:\n    namespace: default\n")
-	writeTestConfigEnc(t, "test-password")
+	writeTestConfigEnc(t)
 
 	passwordFlag = "test-password"
 	t.Cleanup(func() { passwordFlag = "" })
@@ -836,7 +831,7 @@ func TestExec_DoubleCleanupOnceNoPanic(t *testing.T) {
 func TestMigrate_LegacyConfigEnc(t *testing.T) {
 	setupTestHome(t)
 	writeTestConfigYAML(t, "keychain: false\ncurrent: test-cluster\ncontexts:\n  test-cluster:\n    namespace: default\n")
-	writeTestConfigEnc(t, "test-password")
+	writeTestConfigEnc(t)
 
 	encPath := filepath.Join(os.Getenv("HOME"), ".ekube", "config.enc")
 	before, err := os.ReadFile(encPath)
@@ -1101,7 +1096,7 @@ func TestRm_SharedClusterAuthInfoPreserved(t *testing.T) {
 func TestEject_NamedContext(t *testing.T) {
 	setupTestHome(t)
 	writeTestConfigYAML(t, "keychain: false\ncurrent: test-cluster\ncontexts:\n  test-cluster:\n    namespace: default\n  staging:\n    namespace: staging\n")
-	writeTestConfigEnc(t, "test-password")
+	writeTestConfigEnc(t)
 
 	ejectForce = true
 	passwordFlag = "test-password"
@@ -1131,7 +1126,7 @@ func TestEject_NamedContext(t *testing.T) {
 
 func TestEject_NamedContextNotFound(t *testing.T) {
 	setupTestHome(t)
-	writeTestConfigEnc(t, "test-password")
+	writeTestConfigEnc(t)
 
 	ejectForce = true
 	passwordFlag = "test-password"
@@ -1148,7 +1143,7 @@ func TestEject_NamedContextNotFound(t *testing.T) {
 func TestEject_MultipleNamedContexts(t *testing.T) {
 	setupTestHome(t)
 	writeTestConfigYAML(t, "keychain: false\ncurrent: test-cluster\ncontexts:\n  test-cluster:\n    namespace: default\n  staging:\n    namespace: staging\n")
-	writeTestConfigEnc(t, "test-password")
+	writeTestConfigEnc(t)
 
 	ejectForce = true
 	passwordFlag = "test-password"
@@ -1169,7 +1164,7 @@ func TestEject_MultipleNamedContexts(t *testing.T) {
 
 func TestEject_MultipleWithOneMissing(t *testing.T) {
 	setupTestHome(t)
-	writeTestConfigEnc(t, "test-password")
+	writeTestConfigEnc(t)
 
 	ejectForce = true
 	passwordFlag = "test-password"
@@ -1186,7 +1181,7 @@ func TestEject_MultipleWithOneMissing(t *testing.T) {
 func TestEject_WithNamesAndNoForceRequiresConfirmation(t *testing.T) {
 	setupTestHome(t)
 	writeTestConfigYAML(t, "keychain: false\ncurrent: test-cluster\ncontexts:\n  test-cluster:\n    namespace: default\n")
-	writeTestConfigEnc(t, "test-password")
+	writeTestConfigEnc(t)
 
 	ejectForce = false
 	passwordFlag = "test-password"
@@ -1217,7 +1212,7 @@ func TestEject_WithNamesAndNoForceRequiresConfirmation(t *testing.T) {
 func TestEject_ExistingConfigWithoutForceWarnsAndAborts(t *testing.T) {
 	setupTestHome(t)
 	writeTestConfigYAML(t, "keychain: false\ncurrent: test-cluster\ncontexts:\n  test-cluster:\n    namespace: default\n")
-	writeTestConfigEnc(t, "test-password")
+	writeTestConfigEnc(t)
 
 	kubeDir := filepath.Join(os.Getenv("HOME"), ".kube")
 	require.NoError(t, os.MkdirAll(kubeDir, 0o700))
@@ -1253,7 +1248,7 @@ func TestEject_ExistingConfigWithoutForceWarnsAndAborts(t *testing.T) {
 func TestEject_MergeAddsContextToExistingConfig(t *testing.T) {
 	setupTestHome(t)
 	writeTestConfigYAML(t, "keychain: false\ncurrent: test-cluster\ncontexts:\n  test-cluster:\n    namespace: default\n")
-	writeTestConfigEnc(t, "test-password")
+	writeTestConfigEnc(t)
 
 	kubeDir := filepath.Join(os.Getenv("HOME"), ".kube")
 	require.NoError(t, os.MkdirAll(kubeDir, 0o700))
@@ -1289,7 +1284,7 @@ func TestEject_MergeAddsContextToExistingConfig(t *testing.T) {
 func TestEject_MergeConflictSkippedWithoutConfirmation(t *testing.T) {
 	setupTestHome(t)
 	writeTestConfigYAML(t, "keychain: false\ncurrent: test-cluster\ncontexts:\n  test-cluster:\n    namespace: default\n")
-	writeTestConfigEnc(t, "test-password")
+	writeTestConfigEnc(t)
 
 	kubeDir := filepath.Join(os.Getenv("HOME"), ".kube")
 	require.NoError(t, os.MkdirAll(kubeDir, 0o700))
@@ -1336,7 +1331,7 @@ func TestEject_MergeConflictSkippedWithoutConfirmation(t *testing.T) {
 func TestEject_MergeConflictForceReplacesContext(t *testing.T) {
 	setupTestHome(t)
 	writeTestConfigYAML(t, "keychain: false\ncurrent: test-cluster\ncontexts:\n  test-cluster:\n    namespace: default\n")
-	writeTestConfigEnc(t, "test-password")
+	writeTestConfigEnc(t)
 
 	kubeDir := filepath.Join(os.Getenv("HOME"), ".kube")
 	require.NoError(t, os.MkdirAll(kubeDir, 0o700))

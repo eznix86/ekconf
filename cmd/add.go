@@ -36,7 +36,7 @@ the command prompts for confirmation.`,
 			return fmt.Errorf("load kubeconfig: %w", err)
 		}
 
-		password, err := resolvePassword()
+		password, err := resolvePassword(cmd.Context())
 		if err != nil {
 			return err
 		}

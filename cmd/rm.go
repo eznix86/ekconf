@@ -27,7 +27,7 @@ var rmCmd = &cobra.Command{
 	Args:              cobra.MinimumNArgs(1),
 	ValidArgsFunction: completeContext,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		password, err := resolvePassword()
+		password, err := resolvePassword(cmd.Context())
 		if err != nil {
 			return err
 		}
@@ -91,7 +91,7 @@ var rmCmd = &cobra.Command{
 			}
 		}
 		if len(notFound) > 0 {
-			return fmt.Errorf("context(s) not found: %s", joinStrings(notFound))
+			return fmt.Errorf("context(s) not found: %s", strings.Join(notFound, ", "))
 		}
 		return nil
 	},
@@ -137,21 +137,6 @@ func authInfoInUse(contexts map[string]*clientcmdapi.Context, authInfoName strin
 		}
 	}
 	return false
-}
-
-func joinStrings(s []string) string {
-	if len(s) == 0 {
-		return ""
-	}
-	if len(s) == 1 {
-		return s[0]
-	}
-	var result strings.Builder
-	result.WriteString(s[0])
-	for _, v := range s[1:] {
-		result.WriteString(", " + v)
-	}
-	return result.String()
 }
 
 func init() {

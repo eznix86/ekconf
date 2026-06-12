@@ -14,9 +14,9 @@ import (
 func main() {
 	cmd.SetEnvPassword(os.Getenv("EKCONF_PASSWORD"))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	if err := cmd.ExecuteContext(ctx); err != nil {
+		stop()
 		fmt.Fprintln(os.Stderr, err)
 		var exitErr interface{ ExitCode() int }
 		if errors.As(err, &exitErr) {
@@ -24,4 +24,6 @@ func main() {
 		}
 		os.Exit(1)
 	}
+
+	stop()
 }

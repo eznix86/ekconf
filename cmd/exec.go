@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -92,7 +93,7 @@ Use -- to separate the context name from the command.`,
 			return err
 		}
 
-		password, err := resolvePassword()
+		password, err := resolvePassword(cmd.Context())
 		if err != nil {
 			return err
 		}
@@ -134,7 +135,7 @@ Use -- to separate the context name from the command.`,
 			os.Exit(1)
 		}()
 
-		c := buildExecCommand(req.commandArgs, tmpPath)
+		c := buildExecCommand(cmd.Context(), req.commandArgs, tmpPath)
 		c.Stdin = os.Stdin
 		c.Stdout = os.Stdout
 		c.Stderr = os.Stderr
@@ -298,17 +299,19 @@ func writeTempKubeconfig(data []byte) (string, func() error, error) {
 	return tmpPath, cleanup, nil
 }
 
-func buildExecCommand(commandArgs []string, kubeconfigPath string) *exec.Cmd {
+func buildExecCommand(ctx context.Context, commandArgs []string, kubeconfigPath string) *exec.Cmd {
 	var c *exec.Cmd
 	if execNoShell {
-		c = exec.Command(commandArgs[0], commandArgs[1:]...)
+		//nolint:gosec // ekconf exec intentionally runs the command requested by the user.
+		c = exec.CommandContext(ctx, commandArgs[0], commandArgs[1:]...)
 	} else {
 		fullCmd := strings.Join(commandArgs, " ")
 		shell := os.Getenv("SHELL")
 		if shell == "" {
-			c = exec.Command("sh", "-c", fullCmd)
+			c = exec.CommandContext(ctx, "sh", "-c", fullCmd)
 		} else {
-			c = exec.Command(shell, "-ic", fullCmd)
+			//nolint:gosec // Shell mode is intentional so aliases/functions work; use --no-shell to bypass it.
+			c = exec.CommandContext(ctx, shell, "-ic", fullCmd)
 		}
 	}
 	c.Env = append(os.Environ(), "KUBECONFIG="+kubeconfigPath)

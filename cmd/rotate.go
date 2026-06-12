@@ -18,12 +18,12 @@ var rotateCmd = &cobra.Command{
   ekconf rotate --password=old-secret`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		currentPassword, err := resolvePassword()
+		currentPassword, err := resolvePassword(cmd.Context())
 		if err != nil {
 			return err
 		}
 
-		newPassword, err := password.PromptNewPassword()
+		newPassword, err := password.PromptNewPassword(cmd.Context())
 		if err != nil {
 			return err
 		}
