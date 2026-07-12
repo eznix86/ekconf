@@ -13,7 +13,7 @@ require (
 	golang.org/x/crypto v0.53.0
 	golang.org/x/mod v0.37.0
 	golang.org/x/term v0.44.0
-	k8s.io/client-go v0.36.1
+	k8s.io/client-go v1.5.2
 	sigs.k8s.io/yaml v1.6.0
 )
 
