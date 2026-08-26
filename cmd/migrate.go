@@ -39,6 +39,7 @@ var migrateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		defer clear(password)
 
 		migratedData, migrated, err := crypto.Migrate(data, password)
 		if err != nil {

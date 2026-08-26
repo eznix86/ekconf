@@ -67,7 +67,7 @@ func TestResolve_StdinPiped(t *testing.T) {
 
 	pw, err := Resolve(t.Context(), "", true, false, "")
 	require.NoError(t, err)
-	assert.Equal(t, "pipe-password", pw)
+	assert.Equal(t, "pipe-password", string(pw))
 }
 
 func TestResolve_KeychainFallback(t *testing.T) {
@@ -84,13 +84,13 @@ func TestResolve_KeychainFallback(t *testing.T) {
 func TestResolve_KeychainFallbackSkippedWithFlag(t *testing.T) {
 	pw, err := Resolve(t.Context(), "my-pass", false, true, "")
 	require.NoError(t, err)
-	assert.Equal(t, "my-pass", pw)
+	assert.Equal(t, "my-pass", string(pw))
 }
 
 func TestStoreDelete_NoPanic(t *testing.T) {
 	keyring.MockInit()
 
-	err := Store("test-password")
+	err := Store([]byte("test-password"))
 	require.NoError(t, err)
 	require.NoError(t, Delete())
 }

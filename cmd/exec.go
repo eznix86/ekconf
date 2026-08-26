@@ -75,6 +75,10 @@ var execCmd = &cobra.Command{
 via the KUBECONFIG environment variable. The temp file is wiped and deleted
 on normal exit and on SIGINT/SIGTERM. SIGKILL, power loss, and kernel panic can still orphan the file.
 
+On Linux the temp file is written to /dev/shm (RAM-backed tmpfs). On macOS
+/dev/shm does not exist, so the temp file is written to the system temp dir
+(on disk, not RAM-backed) with 0600 permissions inside a 0700 directory.
+
 If no context name is given, the active context from config.yaml is used.
 Use -- to separate the context name from the command.`,
 	Example: `  ekconf exec -- kubectl get pods
@@ -97,6 +101,7 @@ Use -- to separate the context name from the command.`,
 		if err != nil {
 			return err
 		}
+		defer clear(password)
 
 		storePasswordIfNeeded(cmd.ErrOrStderr(), password)
 
@@ -182,7 +187,7 @@ func parseExecRequest(cmd *cobra.Command, cfg *config.Config, args []string) (ex
 	return execRequest{contextName: contextName, commandArgs: commandArgs}, nil
 }
 
-func decryptedContextKubeconfig(cfg *config.Config, contextName, password string) ([]byte, error) {
+func decryptedContextKubeconfig(cfg *config.Config, contextName string, password []byte) ([]byte, error) {
 	kubeconfig, err := loadDecryptedKubeconfig(password)
 	if err != nil {
 		return nil, err

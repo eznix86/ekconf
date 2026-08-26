@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/eznix86/ekconf/internal/config"
 	"github.com/eznix86/ekconf/internal/crypto"
@@ -22,11 +21,13 @@ var rotateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		defer clear(currentPassword)
 
 		newPassword, err := password.PromptNewPassword(cmd.Context())
 		if err != nil {
 			return err
 		}
+		defer clear(newPassword)
 
 		encPath, err := config.EncPath()
 		if err != nil {
@@ -37,21 +38,15 @@ var rotateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		defer clear(plaintext)
 
 		encryptedData, err := crypto.Seal(plaintext, newPassword)
 		if err != nil {
 			return fmt.Errorf("encrypt: %w", err)
 		}
 
-		tmpPath := encPath + ".tmp"
-		if err := os.WriteFile(tmpPath, encryptedData, 0o600); err != nil {
-			os.Remove(tmpPath)
-			return fmt.Errorf("write temp file: %w", err)
-		}
-
-		if err := os.Rename(tmpPath, encPath); err != nil {
-			os.Remove(tmpPath)
-			return fmt.Errorf("atomic swap failed: %w", err)
+		if err := writeFileAtomically(encPath, encryptedData); err != nil {
+			return fmt.Errorf("write encrypted config: %w", err)
 		}
 
 		cfg, err := config.Load()

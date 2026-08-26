@@ -3,6 +3,7 @@ package password
 import (
 	"errors"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -22,7 +23,7 @@ func TestMain(m *testing.M) {
 func TestResolve_PasswordFlag(t *testing.T) {
 	pw, err := Resolve(t.Context(), "my-password", false, false, "")
 	require.NoError(t, err)
-	assert.Equal(t, "my-password", pw)
+	assert.Equal(t, "my-password", string(pw))
 }
 
 func TestResolve_EmptyFlag(t *testing.T) {
@@ -34,19 +35,19 @@ func TestResolve_EmptyFlag(t *testing.T) {
 func TestResolve_EnvironmentVariable(t *testing.T) {
 	pw, err := Resolve(t.Context(), "", false, false, "env-password")
 	require.NoError(t, err)
-	assert.Equal(t, "env-password", pw)
+	assert.Equal(t, "env-password", string(pw))
 }
 
 func TestResolve_FlagOverridesEnv(t *testing.T) {
 	pw, err := Resolve(t.Context(), "flag-password", false, false, "env-password")
 	require.NoError(t, err)
-	assert.Equal(t, "flag-password", pw)
+	assert.Equal(t, "flag-password", string(pw))
 }
 
 func TestResolve_EnvOverridesKeychain(t *testing.T) {
 	pw, err := Resolve(t.Context(), "", false, true, "env-password")
 	require.NoError(t, err)
-	assert.Equal(t, "env-password", pw)
+	assert.Equal(t, "env-password", string(pw))
 }
 
 func TestResolve_NoSources(t *testing.T) {
@@ -69,5 +70,30 @@ func TestResolve_PasswordStdin(t *testing.T) {
 
 	pw, err := Resolve(t.Context(), "", true, false, "")
 	require.NoError(t, err)
-	assert.Equal(t, "stdin-password", pw)
+	assert.Equal(t, "stdin-password", string(pw))
+}
+
+func TestValidateNewPassword(t *testing.T) {
+	tests := []struct {
+		name    string
+		pw      string
+		wantErr bool
+	}{
+		{"empty", "", true},
+		{"one under minimum", strings.Repeat("a", minPasswordLength-1), true},
+		{"exactly minimum", strings.Repeat("a", minPasswordLength), false},
+		{"well over minimum", "correct horse battery staple", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateNewPassword([]byte(tt.pw))
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "at least 12 characters")
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
 }

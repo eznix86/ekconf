@@ -95,11 +95,11 @@ func shouldUseKeychain() bool {
 	return cfg.Keychain
 }
 
-func resolvePassword(ctx context.Context) (string, error) {
+func resolvePassword(ctx context.Context) ([]byte, error) {
 	return resolvePasswordWithKeychain(ctx, shouldUseKeychain())
 }
 
-func resolvePasswordWithKeychain(ctx context.Context, useKeychain bool) (string, error) {
+func resolvePasswordWithKeychain(ctx context.Context, useKeychain bool) ([]byte, error) {
 	return password.Resolve(ctx, passwordFlag, passwordStdin, useKeychain, envPassword)
 }
 
@@ -109,7 +109,7 @@ func shouldRecoverPendingFileTransaction(cmd *cobra.Command) bool {
 	}
 
 	switch cmd.Name() {
-	case "add", "eject", "exec", "migrate", "rm", "rotate", "view":
+	case "add", "eject", "exec", "migrate", "rename", "rm", "rotate", "view":
 		return true
 	default:
 		return false
@@ -125,11 +125,11 @@ func completeContext(cmd *cobra.Command, args []string, toComplete string) ([]st
 	return sortedContextNames(cfg), cobra.ShellCompDirectiveNoFileComp
 }
 
-func storePasswordIfNeeded(w io.Writer, pw string) {
+func storePasswordIfNeeded(w io.Writer, pw []byte) {
 	if !shouldUseKeychain() {
 		return
 	}
-	if pw == "" || passwordFlag != "" {
+	if len(pw) == 0 || passwordFlag != "" {
 		return
 	}
 	if err := password.Store(pw); err != nil {

@@ -11,23 +11,23 @@ import (
 func TestKeychain_StoreAndResolve(t *testing.T) {
 	keyring.MockInit()
 
-	err := Store("mock-password")
+	err := Store([]byte("mock-password"))
 	require.NoError(t, err)
 
 	pw, err := Resolve(t.Context(), "", false, true, "")
 	require.NoError(t, err)
-	assert.Equal(t, "mock-password", pw)
+	assert.Equal(t, "mock-password", string(pw))
 }
 
 func TestKeychain_Delete(t *testing.T) {
 	keyring.MockInit()
 
-	err := Store("delete-me")
+	err := Store([]byte("delete-me"))
 	require.NoError(t, err)
 
 	pw, err := Resolve(t.Context(), "", false, true, "")
 	require.NoError(t, err)
-	assert.Equal(t, "delete-me", pw)
+	assert.Equal(t, "delete-me", string(pw))
 
 	err = Delete()
 	require.NoError(t, err)
@@ -40,7 +40,7 @@ func TestKeychain_Delete(t *testing.T) {
 func TestKeychain_EmptyPassword(t *testing.T) {
 	keyring.MockInit()
 
-	err := Store("")
+	err := Store([]byte(""))
 	require.NoError(t, err)
 
 	pw, err := Resolve(t.Context(), "", false, true, "")
@@ -51,24 +51,24 @@ func TestKeychain_EmptyPassword(t *testing.T) {
 func TestKeychain_StoreOverwrites(t *testing.T) {
 	keyring.MockInit()
 
-	require.NoError(t, Store("first-password"))
-	require.NoError(t, Store("second-password"))
+	require.NoError(t, Store([]byte("first-password")))
+	require.NoError(t, Store([]byte("second-password")))
 
 	pw, err := Resolve(t.Context(), "", false, true, "")
 	require.NoError(t, err)
-	assert.Equal(t, "second-password", pw)
+	assert.Equal(t, "second-password", string(pw))
 }
 
 func TestKeychain_ResolvePrecedence(t *testing.T) {
 	keyring.MockInit()
 
-	require.NoError(t, Store("keychain-password"))
+	require.NoError(t, Store([]byte("keychain-password")))
 
 	pw, err := Resolve(t.Context(), "flag-password", false, true, "")
 	require.NoError(t, err)
-	assert.Equal(t, "flag-password", pw, "flag should override keychain")
+	assert.Equal(t, "flag-password", string(pw), "flag should override keychain")
 
 	pw, err = Resolve(t.Context(), "", false, true, "env-password")
 	require.NoError(t, err)
-	assert.Equal(t, "env-password", pw, "env should override keychain")
+	assert.Equal(t, "env-password", string(pw), "env should override keychain")
 }

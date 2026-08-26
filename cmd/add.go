@@ -40,6 +40,7 @@ the command prompts for confirmation.`,
 		if err != nil {
 			return err
 		}
+		defer clear(password)
 
 		if err := config.EnsureDir(); err != nil {
 			return err
@@ -77,7 +78,7 @@ the command prompts for confirmation.`,
 	},
 }
 
-func loadExistingKubeconfig(password string) (*clientcmdapi.Config, error) {
+func loadExistingKubeconfig(password []byte) (*clientcmdapi.Config, error) {
 	encPath, err := config.EncPath()
 	if err != nil {
 		return nil, err
@@ -187,7 +188,7 @@ func mergeKubeconfigContexts(
 	}
 }
 
-func writeMergedKubeconfig(cfg *config.Config, kubeconfig *clientcmdapi.Config, password string) error {
+func writeMergedKubeconfig(cfg *config.Config, kubeconfig *clientcmdapi.Config, password []byte) error {
 	mergedData, err := clientcmd.Write(*kubeconfig)
 	if err != nil {
 		return fmt.Errorf("marshal merged kubeconfig: %w", err)

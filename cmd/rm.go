@@ -31,6 +31,7 @@ var rmCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		defer clear(password)
 
 		encPath, err := config.EncPath()
 		if err != nil {

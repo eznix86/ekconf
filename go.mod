@@ -75,6 +75,6 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.2 // indirect
 )
 
-toolchain go1.26.4
+toolchain go1.26.7
 
 tool golang.org/x/vuln/cmd/govulncheck
