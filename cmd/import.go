@@ -39,6 +39,7 @@ is shown.`,
 		if err != nil {
 			return err
 		}
+		defer clear(password)
 
 		kubeconfig, err := clientcmd.LoadFromFile(srcPath)
 		if err != nil {

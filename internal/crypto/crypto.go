@@ -29,11 +29,11 @@ type EncryptedFile struct {
 	Ciphertext []byte
 }
 
-func deriveKey(password string, salt []byte) []byte {
-	return argon2.IDKey([]byte(password), salt, ArgonTime, ArgonMemory, ArgonThreads, ArgonKeyLen)
+func deriveKey(password, salt []byte) []byte {
+	return argon2.IDKey(password, salt, ArgonTime, ArgonMemory, ArgonThreads, ArgonKeyLen)
 }
 
-func Encrypt(plaintext []byte, password string) (*EncryptedFile, error) {
+func Encrypt(plaintext, password []byte) (*EncryptedFile, error) {
 	salt := make([]byte, SaltLen)
 	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
 		return nil, fmt.Errorf("generate salt: %w", err)
@@ -66,7 +66,7 @@ func Encrypt(plaintext []byte, password string) (*EncryptedFile, error) {
 	}, nil
 }
 
-func Decrypt(ef *EncryptedFile, password string) ([]byte, error) {
+func Decrypt(ef *EncryptedFile, password []byte) ([]byte, error) {
 	key := deriveKey(password, ef.Salt)
 	defer clear(key)
 
@@ -88,17 +88,17 @@ func Decrypt(ef *EncryptedFile, password string) ([]byte, error) {
 	return plaintext, nil
 }
 
-func Seal(plaintext []byte, password string) ([]byte, error) {
-	blob, err := secretbox.Seal(plaintext, password)
+func Seal(plaintext, password []byte) ([]byte, error) {
+	blob, err := secretbox.Seal(plaintext, string(password))
 	if err != nil {
 		return nil, fmt.Errorf("seal: %w", err)
 	}
 	return blob, nil
 }
 
-func Open(data []byte, password string) ([]byte, error) {
+func Open(data, password []byte) ([]byte, error) {
 	if IsSecretBox(data) {
-		plaintext, err := secretbox.Unseal(data, password)
+		plaintext, err := secretbox.Unseal(data, string(password))
 		if err != nil {
 			return nil, fmt.Errorf("unseal: %w", err)
 		}
@@ -118,7 +118,7 @@ func Open(data []byte, password string) ([]byte, error) {
 	return plaintext, nil
 }
 
-func Migrate(data []byte, password string) ([]byte, bool, error) {
+func Migrate(data, password []byte) ([]byte, bool, error) {
 	if IsSecretBox(data) {
 		return nil, false, nil
 	}

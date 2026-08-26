@@ -42,7 +42,7 @@ func TestEncryptDecrypt_RoundTrip(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ef, err := Encrypt([]byte(tt.plaintext), tt.password)
+			ef, err := Encrypt([]byte(tt.plaintext), []byte(tt.password))
 			require.NoError(t, err)
 			require.NotNil(t, ef)
 
@@ -50,7 +50,7 @@ func TestEncryptDecrypt_RoundTrip(t *testing.T) {
 			assert.Len(t, ef.Nonce, NonceLen)
 			assert.NotEmpty(t, ef.Ciphertext)
 
-			decrypted, err := Decrypt(ef, tt.password)
+			decrypted, err := Decrypt(ef, []byte(tt.password))
 			require.NoError(t, err)
 			assert.Equal(t, tt.plaintext, string(decrypted))
 		})
@@ -58,10 +58,10 @@ func TestEncryptDecrypt_RoundTrip(t *testing.T) {
 }
 
 func TestEncrypt_UniqueSaltAndNonce(t *testing.T) {
-	a, err := Encrypt([]byte("hello"), "pass")
+	a, err := Encrypt([]byte("hello"), []byte("pass"))
 	require.NoError(t, err)
 
-	b, err := Encrypt([]byte("hello"), "pass")
+	b, err := Encrypt([]byte("hello"), []byte("pass"))
 	require.NoError(t, err)
 
 	assert.NotEqual(t, a.Salt, b.Salt, "salt should be unique per encryption")
@@ -70,27 +70,27 @@ func TestEncrypt_UniqueSaltAndNonce(t *testing.T) {
 }
 
 func TestDecrypt_WrongPassword(t *testing.T) {
-	ef, err := Encrypt([]byte("secret data"), "correct-password")
+	ef, err := Encrypt([]byte("secret data"), []byte("correct-password"))
 	require.NoError(t, err)
 
-	_, err = Decrypt(ef, "wrong-password")
+	_, err = Decrypt(ef, []byte("wrong-password"))
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "decrypt")
 }
 
 func TestDecrypt_TamperedCiphertext(t *testing.T) {
-	ef, err := Encrypt([]byte("secret data"), "password")
+	ef, err := Encrypt([]byte("secret data"), []byte("password"))
 	require.NoError(t, err)
 
 	ef.Ciphertext[0] ^= 0xFF
 
-	_, err = Decrypt(ef, "password")
+	_, err = Decrypt(ef, []byte("password"))
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "decrypt")
 }
 
 func TestMarshalUnmarshal_RoundTrip(t *testing.T) {
-	ef, err := Encrypt([]byte("hello world"), "password")
+	ef, err := Encrypt([]byte("hello world"), []byte("password"))
 	require.NoError(t, err)
 
 	data := Marshal(ef)
@@ -103,7 +103,7 @@ func TestMarshalUnmarshal_RoundTrip(t *testing.T) {
 	assert.Equal(t, ef.Nonce, restored.Nonce)
 	assert.Equal(t, ef.Ciphertext, restored.Ciphertext)
 
-	decrypted, err := Decrypt(restored, "password")
+	decrypted, err := Decrypt(restored, []byte("password"))
 	require.NoError(t, err)
 	assert.Equal(t, "hello world", string(decrypted))
 }
@@ -128,7 +128,7 @@ func TestUnmarshal_ShortData(t *testing.T) {
 }
 
 func TestMarshal_Format(t *testing.T) {
-	ef, err := Encrypt([]byte("data"), "pass")
+	ef, err := Encrypt([]byte("data"), []byte("pass"))
 	require.NoError(t, err)
 
 	data := Marshal(ef)
@@ -140,67 +140,67 @@ func TestMarshal_Format(t *testing.T) {
 }
 
 func TestSealOpen_RoundTrip(t *testing.T) {
-	blob, err := Seal([]byte("secret data"), "password")
+	blob, err := Seal([]byte("secret data"), []byte("password"))
 	require.NoError(t, err)
 	require.True(t, IsSecretBox(blob))
 
-	decrypted, err := Open(blob, "password")
+	decrypted, err := Open(blob, []byte("password"))
 	require.NoError(t, err)
 	assert.Equal(t, "secret data", string(decrypted))
 }
 
 func TestOpen_LegacyFormat(t *testing.T) {
-	ef, err := Encrypt([]byte("legacy data"), "password")
+	ef, err := Encrypt([]byte("legacy data"), []byte("password"))
 	require.NoError(t, err)
 	data := Marshal(ef)
 	require.False(t, IsSecretBox(data))
 
-	decrypted, err := Open(data, "password")
+	decrypted, err := Open(data, []byte("password"))
 	require.NoError(t, err)
 	assert.Equal(t, "legacy data", string(decrypted))
 }
 
 func TestOpen_WrongPassword(t *testing.T) {
-	blob, err := Seal([]byte("secret data"), "correct-password")
+	blob, err := Seal([]byte("secret data"), []byte("correct-password"))
 	require.NoError(t, err)
 
-	_, err = Open(blob, "wrong-password")
+	_, err = Open(blob, []byte("wrong-password"))
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "unseal")
 }
 
 func TestMigrate_LegacyFormat(t *testing.T) {
-	ef, err := Encrypt([]byte("legacy data"), "password")
+	ef, err := Encrypt([]byte("legacy data"), []byte("password"))
 	require.NoError(t, err)
 
-	migratedData, migrated, err := Migrate(Marshal(ef), "password")
+	migratedData, migrated, err := Migrate(Marshal(ef), []byte("password"))
 	require.NoError(t, err)
 	require.True(t, migrated)
 	require.True(t, IsSecretBox(migratedData))
 
-	decrypted, err := Open(migratedData, "password")
+	decrypted, err := Open(migratedData, []byte("password"))
 	require.NoError(t, err)
 	assert.Equal(t, "legacy data", string(decrypted))
 }
 
 func TestMigrate_CurrentFormatNoop(t *testing.T) {
-	blob, err := Seal([]byte("secret data"), "password")
+	blob, err := Seal([]byte("secret data"), []byte("password"))
 	require.NoError(t, err)
 
-	migratedData, migrated, err := Migrate(blob, "password")
+	migratedData, migrated, err := Migrate(blob, []byte("password"))
 	require.NoError(t, err)
 	assert.False(t, migrated)
 	assert.Nil(t, migratedData)
 }
 
 func TestDecrypt_EmptyPassword(t *testing.T) {
-	ef, err := Encrypt([]byte("data"), "")
+	ef, err := Encrypt([]byte("data"), []byte(""))
 	require.NoError(t, err)
 
-	decrypted, err := Decrypt(ef, "")
+	decrypted, err := Decrypt(ef, []byte(""))
 	require.NoError(t, err)
 	assert.Equal(t, "data", string(decrypted))
 
-	_, err = Decrypt(ef, "not-empty")
+	_, err = Decrypt(ef, []byte("not-empty"))
 	assert.Error(t, err)
 }

@@ -35,6 +35,7 @@ by default. Use --plain to include all fields.`,
 		if err != nil {
 			return err
 		}
+		defer clear(password)
 
 		kubeconfig, err := loadDecryptedKubeconfig(password)
 		if err != nil {

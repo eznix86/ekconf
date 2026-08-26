@@ -10,7 +10,7 @@ import (
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
 
-func readDecryptedConfigData(password string) ([]byte, error) {
+func readDecryptedConfigData(password []byte) ([]byte, error) {
 	encPath, err := config.EncPath()
 	if err != nil {
 		return nil, err
@@ -29,7 +29,7 @@ func readDecryptedConfigData(password string) ([]byte, error) {
 	return plaintext, nil
 }
 
-func loadDecryptedKubeconfig(password string) (*clientcmdapi.Config, error) {
+func loadDecryptedKubeconfig(password []byte) (*clientcmdapi.Config, error) {
 	plaintext, err := readDecryptedConfigData(password)
 	if err != nil {
 		return nil, err

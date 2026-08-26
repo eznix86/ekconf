@@ -67,6 +67,7 @@ ekconf add ~/path/to/kubeconfig.yaml -n my-cluster
 | Command | Description |
 |---|---|
 | `ekconf add <path>` | Encrypt and merge a kubeconfig |
+| `ekconf rename <old> <new>` | Rename a context (alias: `mv`) |
 | `ekconf rm <name> [<name>...]` | Remove one or more contexts |
 | `ekconf ls` | List all contexts (alphabetical) |
 | `ekconf view <name>` | View a context's kubeconfig (redacted by default) |
@@ -206,6 +207,25 @@ Your kubeconfig data lives in a single encrypted file at `~/.ekube/config.enc`
 (AES-256-GCM, key derived with Argon2id). An index at
 `~/.ekube/config.yaml` holds only metadata (context names, namespaces) so
 commands like `ls` and `use` never need your password.
+
+### Threat model
+
+`config.enc` is protected by Argon2id (64 MiB, 3 iterations), which costs
+roughly 0.5s per attempt. There is no lockout or attempt limit: anyone who
+obtains the file can brute-force it offline at that cost per guess. Your
+password is the only thing standing between an attacker and your cluster
+credentials.
+
+`ekconf rotate` requires at least 12 characters. A long passphrase is worth
+more than a short complex one. Enabling `keychain=true` keeps the password in
+the OS keychain instead of your shell history or a script.
+
+In memory, the password is held as a byte slice and zeroed as soon as each
+command is done with it. The keychain path is the exception: `go-keyring`
+exposes a string-only API, so on `keychain=true` the password also lands in
+immutable Go strings that cannot be zeroed and persist until garbage
+collection. This only matters against an attacker who can already read the
+process heap.
 
 ##### `ekconf import [--force]`
 

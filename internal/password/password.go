@@ -19,57 +19,59 @@ const keyringService = "ekconf"
 
 const noTTYPasswordMessage = "not a terminal and no password provided via --password, --password-stdin, or EKCONF_PASSWORD"
 
+const minPasswordLength = 12
+
 var (
 	lookupCurrentUser = user.Current
 	openTTY           = os.OpenFile
 )
 
-func Resolve(ctx context.Context, passwordFlag string, passwordStdin, useKeychain bool, envPassword string) (string, error) {
+func Resolve(ctx context.Context, passwordFlag string, passwordStdin, useKeychain bool, envPassword string) ([]byte, error) {
 	if passwordFlag != "" {
-		return passwordFlag, nil
+		return []byte(passwordFlag), nil
 	}
 
 	if passwordStdin {
 		data, err := io.ReadAll(os.Stdin)
 		if err != nil {
-			return "", fmt.Errorf("read stdin: %w", err)
+			return nil, fmt.Errorf("read stdin: %w", err)
 		}
-		return strings.TrimRight(string(data), "\r\n"), nil
+		return []byte(strings.TrimRight(string(data), "\r\n")), nil
 	}
 
 	if envPassword != "" {
-		return envPassword, nil
+		return []byte(envPassword), nil
 	}
 
 	if useKeychain {
 		pw, err := keyring.Get(keyringService, currentUser())
 		if err == nil {
-			return pw, nil
+			return []byte(pw), nil
 		}
 	}
 
 	return promptPassword(ctx, useKeychain)
 }
 
-func Store(password string) error {
-	return keyring.Set(keyringService, currentUser(), password)
+func Store(password []byte) error {
+	return keyring.Set(keyringService, currentUser(), string(password))
 }
 
 func Delete() error {
 	return keyring.Delete(keyringService, currentUser())
 }
 
-func promptPassword(ctx context.Context, useKeychain bool) (string, error) {
+func promptPassword(ctx context.Context, useKeychain bool) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	tty, err := openTTY("/dev/tty", os.O_RDONLY, 0)
 	if err != nil {
 		if useKeychain {
-			return "", fmt.Errorf(noTTYPasswordMessage + ", or keychain")
+			return nil, fmt.Errorf(noTTYPasswordMessage + ", or keychain")
 		}
-		return "", errors.New(noTTYPasswordMessage)
+		return nil, errors.New(noTTYPasswordMessage)
 	}
 	defer tty.Close()
 
@@ -77,21 +79,20 @@ func promptPassword(ctx context.Context, useKeychain bool) (string, error) {
 	bytePW, err := term.ReadPassword(int(tty.Fd()))
 	fmt.Fprintln(os.Stderr)
 	if err != nil {
-		return "", fmt.Errorf("read password: %w", err)
+		return nil, fmt.Errorf("read password: %w", err)
 	}
-	defer clear(bytePW)
 
-	return string(bytePW), nil
+	return bytePW, nil
 }
 
-func PromptNewPassword(ctx context.Context) (string, error) {
+func PromptNewPassword(ctx context.Context) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	tty, err := openTTY("/dev/tty", os.O_RDONLY, 0)
 	if err != nil {
-		return "", errors.New(noTTYPasswordMessage)
+		return nil, errors.New(noTTYPasswordMessage)
 	}
 	defer tty.Close()
 
@@ -99,23 +100,37 @@ func PromptNewPassword(ctx context.Context) (string, error) {
 	pw, err := term.ReadPassword(int(tty.Fd()))
 	fmt.Fprintln(os.Stderr)
 	if err != nil {
-		return "", fmt.Errorf("read new password: %w", err)
+		return nil, fmt.Errorf("read new password: %w", err)
 	}
-	defer clear(pw)
+
+	if err := validateNewPassword(pw); err != nil {
+		clear(pw)
+		return nil, err
+	}
 
 	fmt.Fprint(os.Stderr, "Confirm new password: ")
 	confirm, err := term.ReadPassword(int(tty.Fd()))
 	fmt.Fprintln(os.Stderr)
 	if err != nil {
-		return "", fmt.Errorf("read confirm: %w", err)
+		clear(pw)
+		return nil, fmt.Errorf("read confirm: %w", err)
 	}
-	defer clear(confirm)
 
 	if !bytes.Equal(pw, confirm) {
-		return "", fmt.Errorf("passwords do not match")
+		clear(pw)
+		clear(confirm)
+		return nil, fmt.Errorf("passwords do not match")
 	}
 
-	return string(pw), nil
+	clear(confirm)
+	return pw, nil
+}
+
+func validateNewPassword(pw []byte) error {
+	if len(pw) < minPasswordLength {
+		return fmt.Errorf("password must be at least %d characters", minPasswordLength)
+	}
+	return nil
 }
 
 func currentUser() string {

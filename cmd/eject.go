@@ -46,6 +46,7 @@ A confirmation prompt is shown unless --force is passed.`,
 		if err != nil {
 			return err
 		}
+		defer clear(password)
 
 		kubeconfig, err := loadDecryptedKubeconfig(password)
 		if err != nil {
@@ -104,7 +105,7 @@ A confirmation prompt is shown unless --force is passed.`,
 			return fmt.Errorf("marshal ejected kubeconfig: %w", err)
 		}
 
-		if err := os.WriteFile(kubeConfigPath, ejectedPlaintext, 0o600); err != nil {
+		if err := writeFileAtomically(kubeConfigPath, ejectedPlaintext); err != nil {
 			return fmt.Errorf("write ~/.kube/config: %w", err)
 		}
 

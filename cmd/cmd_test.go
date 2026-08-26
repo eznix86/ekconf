@@ -117,7 +117,7 @@ func writeTestConfigEnc(t *testing.T) {
 	data, err := clientcmd.Write(*kc)
 	require.NoError(t, err)
 
-	ef, err := crypto.Encrypt(data, "test-password")
+	ef, err := crypto.Encrypt(data, []byte("test-password"))
 	require.NoError(t, err)
 
 	encPath := filepath.Join(os.Getenv("HOME"), ".ekube", "config.enc")
@@ -221,7 +221,7 @@ func TestResolvePassword_PasswordFlag(t *testing.T) {
 
 	pw, err := resolvePasswordWithKeychain(t.Context(), false)
 	require.NoError(t, err)
-	assert.Equal(t, "test-pass", pw)
+	assert.Equal(t, "test-pass", string(pw))
 }
 
 func TestLS_NoContexts(t *testing.T) {
@@ -477,7 +477,7 @@ func TestAdd_SameAuthInfoNameNoCollision(t *testing.T) {
 	assert.Contains(t, cfg.Contexts, "admin@preprod-cluster1")
 
 	// Decrypt and verify both auth infos exist independently
-	kubeconfig, err := loadDecryptedKubeconfig("test-password")
+	kubeconfig, err := loadDecryptedKubeconfig([]byte("test-password"))
 	require.NoError(t, err)
 
 	// Auth infos are prefixed
@@ -525,7 +525,7 @@ func TestAdd_SameClusterNameNoCollision(t *testing.T) {
 	err = executeCommand("add", fileB)
 	require.NoError(t, err)
 
-	kubeconfig, err := loadDecryptedKubeconfig("test-password")
+	kubeconfig, err := loadDecryptedKubeconfig([]byte("test-password"))
 	require.NoError(t, err)
 
 	// Both clusters exist independently
@@ -858,7 +858,7 @@ func TestMigrate_LegacyConfigEnc(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, before, backup)
 
-	kubeconfig, err := loadDecryptedKubeconfig("test-password")
+	kubeconfig, err := loadDecryptedKubeconfig([]byte("test-password"))
 	require.NoError(t, err)
 	assert.Contains(t, kubeconfig.Contexts, "test-cluster")
 }
@@ -875,7 +875,7 @@ func TestMigrate_CurrentFormatNoPasswordNeeded(t *testing.T) {
 	data, err := clientcmd.Write(*kc)
 	require.NoError(t, err)
 
-	encryptedData, err := crypto.Seal(data, "test-password")
+	encryptedData, err := crypto.Seal(data, []byte("test-password"))
 	require.NoError(t, err)
 	encPath := filepath.Join(os.Getenv("HOME"), ".ekube", "config.enc")
 	require.NoError(t, os.WriteFile(encPath, encryptedData, 0o600))
@@ -900,7 +900,7 @@ func TestRm_NotFound(t *testing.T) {
 	kc := clientcmdapi.NewConfig()
 	data, err := clientcmd.Write(*kc)
 	require.NoError(t, err)
-	ef, err := crypto.Encrypt(data, "test-password")
+	ef, err := crypto.Encrypt(data, []byte("test-password"))
 	require.NoError(t, err)
 	require.NoError(t, os.MkdirAll(filepath.Dir(encPath), 0o700))
 	require.NoError(t, os.WriteFile(encPath, crypto.Marshal(ef), 0o600))
@@ -930,7 +930,7 @@ func TestRm_Single(t *testing.T) {
 	kc.AuthInfos["prod-user"] = &clientcmdapi.AuthInfo{Username: "admin"}
 	data, err := clientcmd.Write(*kc)
 	require.NoError(t, err)
-	ef, err := crypto.Encrypt(data, "test-password")
+	ef, err := crypto.Encrypt(data, []byte("test-password"))
 	require.NoError(t, err)
 	require.NoError(t, os.MkdirAll(filepath.Dir(encPath), 0o700))
 	require.NoError(t, os.WriteFile(encPath, crypto.Marshal(ef), 0o600))
@@ -953,7 +953,7 @@ func TestRm_Single(t *testing.T) {
 	assert.Empty(t, cfg.Current)
 
 	// Verify cluster and auth info removed
-	kubeconfig, err := loadDecryptedKubeconfig("test-password")
+	kubeconfig, err := loadDecryptedKubeconfig([]byte("test-password"))
 	require.NoError(t, err)
 	assert.NotContains(t, kubeconfig.Contexts, "staging")
 	assert.NotContains(t, kubeconfig.Clusters, "staging-cluster")
@@ -982,7 +982,7 @@ func TestRm_Multiple(t *testing.T) {
 	kc.AuthInfos["dev-user"] = &clientcmdapi.AuthInfo{Username: "dev"}
 	data, err := clientcmd.Write(*kc)
 	require.NoError(t, err)
-	ef, err := crypto.Encrypt(data, "test-password")
+	ef, err := crypto.Encrypt(data, []byte("test-password"))
 	require.NoError(t, err)
 	require.NoError(t, os.MkdirAll(filepath.Dir(encPath), 0o700))
 	require.NoError(t, os.WriteFile(encPath, crypto.Marshal(ef), 0o600))
@@ -1018,7 +1018,7 @@ func TestRm_PartialNotFound(t *testing.T) {
 	kc.AuthInfos["staging-user"] = &clientcmdapi.AuthInfo{Username: "deploy"}
 	data, err := clientcmd.Write(*kc)
 	require.NoError(t, err)
-	ef, err := crypto.Encrypt(data, "test-password")
+	ef, err := crypto.Encrypt(data, []byte("test-password"))
 	require.NoError(t, err)
 	require.NoError(t, os.MkdirAll(filepath.Dir(encPath), 0o700))
 	require.NoError(t, os.WriteFile(encPath, crypto.Marshal(ef), 0o600))
@@ -1050,7 +1050,7 @@ func TestRm_NoContexts(t *testing.T) {
 	kc.CurrentContext = ""
 	data, err := clientcmd.Write(*kc)
 	require.NoError(t, err)
-	ef, err := crypto.Encrypt(data, "test-password")
+	ef, err := crypto.Encrypt(data, []byte("test-password"))
 	require.NoError(t, err)
 	require.NoError(t, os.MkdirAll(filepath.Dir(encPath), 0o700))
 	require.NoError(t, os.WriteFile(encPath, crypto.Marshal(ef), 0o600))
@@ -1076,7 +1076,7 @@ func TestRm_SharedClusterAuthInfoPreserved(t *testing.T) {
 	kc.AuthInfos["shared-user"] = &clientcmdapi.AuthInfo{Token: "shared-token"}
 	data, err := clientcmd.Write(*kc)
 	require.NoError(t, err)
-	ef, err := crypto.Encrypt(data, "test-password")
+	ef, err := crypto.Encrypt(data, []byte("test-password"))
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(encPath, crypto.Marshal(ef), 0o600))
 
@@ -1086,7 +1086,7 @@ func TestRm_SharedClusterAuthInfoPreserved(t *testing.T) {
 	err = executeCommand("rm", "ctx1")
 	require.NoError(t, err)
 
-	kubeconfig, err := loadDecryptedKubeconfig("test-password")
+	kubeconfig, err := loadDecryptedKubeconfig([]byte("test-password"))
 	require.NoError(t, err)
 	// shared cluster and auth info survive because ctx2 still references them
 	assert.Contains(t, kubeconfig.Clusters, "shared-cluster")
@@ -1412,7 +1412,7 @@ func TestImport_Success(t *testing.T) {
 	assert.Contains(t, cfg.Contexts, "imported-ctx")
 
 	// Verify auth info is preserved in encrypted config
-	decrypted, err := loadDecryptedKubeconfig("test-password")
+	decrypted, err := loadDecryptedKubeconfig([]byte("test-password"))
 	require.NoError(t, err)
 	assert.Equal(t, "imported-token", decrypted.AuthInfos["imported-ctx/imported-user"].Token)
 }

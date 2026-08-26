@@ -9,7 +9,7 @@ BIN_NAME="ekconf"
 if [[ $# -gt 0 ]]; then
 	VERSION="${1#v}"
 else
-	VERSION="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"].lstrip("v"))')"
+	VERSION="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep -o '"tag_name": *"[^"]*"' | head -1 | cut -d'"' -f4 | sed 's/^v//')"
 fi
 
 os="$(uname -s | tr '[:upper:]' '[:lower:]')"
