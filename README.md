@@ -77,7 +77,7 @@ ekconf add ~/path/to/kubeconfig.yaml -n my-cluster
 | `ekconf exec [<name>] -- <cmd>` | Run a command with decrypted KUBECONFIG |
 | `ekconf rotate` | Re-encrypt with a new password |
 | `ekconf migrate` | Migrate `config.enc` to the current encrypted format |
-| `ekconf import [--force]` | Import `~/.kube/config` into the encrypted store |
+| `ekconf import [<name>...] [--force]` | Import contexts from `~/.kube/config` into the encrypted store |
 | `ekconf eject [<name>...] [--merge] [--force]` | Decrypt and write or merge into `~/.kube/config` |
 | `ekconf config list` | View configuration (colorized with` yaml.colorize=true`) |
 | `ekconf config <key=value>` | Set a configuration option |
@@ -272,14 +272,20 @@ immutable Go strings that cannot be zeroed and persist until garbage
 collection. This only matters against an attacker who can already read the
 process heap.
 
-##### `ekconf import [--force]`
+##### `ekconf import [<name>...] [--force]`
 
-Migrate from a plaintext `~/.kube/config` into the encrypted store.
+Migrate from a plaintext `~/.kube/config` into the encrypted store. With no
+names, every context is imported.
 
 ```sh
-ekconf import                # import and keep the source
-ekconf import --force        # import and remove ~/.kube/config
+ekconf import                # import every context, keep the source
+ekconf import prod           # import only prod
+ekconf import prod staging   # import both
+ekconf import --force        # import everything and remove ~/.kube/config
 ```
+
+`--force` cannot be combined with names, because removing `~/.kube/config`
+would delete the contexts you did not import.
 
 ##### `ekconf eject [<name>...] [--merge] [--force]`
 

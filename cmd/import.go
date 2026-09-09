@@ -4,35 +4,54 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/eznix86/ekconf/internal/config"
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
 
 var importForce bool
 
 var importCmd = &cobra.Command{
-	Use:   "import [--force]",
-	Short: "Import ~/.kube/config into the encrypted store",
-	Long: `Read the plaintext kubeconfig at ~/.kube/config and import all
-contexts into the encrypted store. If --force is set, the source file
-is removed after a successful import. Otherwise, a confirmation prompt
-is shown.`,
+	Use:   "import [<name>...] [--force]",
+	Short: "Import contexts from ~/.kube/config into the encrypted store",
+	Long: `Read the plaintext kubeconfig at ~/.kube/config and import contexts into
+the encrypted store. If no names are given, all contexts are imported.
+
+--force removes ~/.kube/config after a successful import. It cannot be combined
+with named contexts, because that would delete the contexts you did not import.`,
 	Example: `  ekconf import
+  ekconf import prod
+  ekconf import prod staging
   ekconf import --force`,
-	Args: cobra.NoArgs,
+	Args:              cobra.ArbitraryArgs,
+	ValidArgsFunction: completeKubeconfigContext,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("home dir: %w", err)
+		if importForce && len(args) > 0 {
+			return fmt.Errorf("--force removes ~/.kube/config entirely, so it cannot be combined with named contexts")
 		}
 
-		srcPath := filepath.Join(home, ".kube", "config")
+		srcPath, err := kubeconfigPath()
+		if err != nil {
+			return err
+		}
 		if _, err := os.Stat(srcPath); os.IsNotExist(err) {
 			return fmt.Errorf("%s does not exist", srcPath)
 		} else if err != nil {
 			return fmt.Errorf("stat %s: %w", srcPath, err)
+		}
+
+		kubeconfig, err := clientcmd.LoadFromFile(srcPath)
+		if err != nil {
+			return fmt.Errorf("load %s: %w", srcPath, err)
+		}
+
+		selected, err := selectKubeconfigContexts(kubeconfig, args)
+		if err != nil {
+			return err
 		}
 
 		password, err := resolvePassword(cmd.Context())
@@ -40,11 +59,6 @@ is shown.`,
 			return err
 		}
 		defer clear(password)
-
-		kubeconfig, err := clientcmd.LoadFromFile(srcPath)
-		if err != nil {
-			return fmt.Errorf("load %s: %w", srcPath, err)
-		}
 
 		if err := config.EnsureDir(); err != nil {
 			return err
@@ -60,12 +74,12 @@ is shown.`,
 			return err
 		}
 
-		allRenames, err := planAddRenames(cfg, kubeconfig, "")
+		renames, err := planAddRenames(cfg, selected, "")
 		if err != nil {
 			return err
 		}
 
-		mergeKubeconfigContexts(cfg, existingKubeconfig, kubeconfig, allRenames)
+		mergeKubeconfigContexts(cfg, existingKubeconfig, selected, renames)
 
 		if err := writeMergedKubeconfig(cfg, existingKubeconfig, password); err != nil {
 			return err
@@ -73,7 +87,7 @@ is shown.`,
 
 		storePasswordIfNeeded(cmd.ErrOrStderr(), password)
 
-		for _, r := range allRenames {
+		for _, r := range renames {
 			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Imported context '%s'\n", r.dst); err != nil {
 				return err
 			}
@@ -83,16 +97,74 @@ is shown.`,
 			if err := os.Remove(srcPath); err != nil {
 				return fmt.Errorf("remove %s: %w", srcPath, err)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Removed %s\n", srcPath)
-		} else {
-			fmt.Fprintf(cmd.OutOrStdout(), "\nTo remove the plaintext source file, run: rm %s\n", srcPath)
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Removed %s\n", srcPath)
+			return err
 		}
 
-		return nil
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "\nTo remove the plaintext source file, run: rm %s\n", srcPath)
+		return err
 	},
+}
+
+func kubeconfigPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("home dir: %w", err)
+	}
+	return filepath.Join(home, ".kube", "config"), nil
+}
+
+func selectKubeconfigContexts(kubeconfig *clientcmdapi.Config, names []string) (*clientcmdapi.Config, error) {
+	if len(names) == 0 {
+		return kubeconfig, nil
+	}
+
+	selected := initializedKubeconfig()
+	for _, name := range names {
+		ctx, ok := kubeconfig.Contexts[name]
+		if !ok || ctx == nil {
+			return nil, fmt.Errorf(
+				"context '%s' not found in kubeconfig (available: %s)",
+				name, strings.Join(sortedKubeconfigContextNames(kubeconfig), ", "),
+			)
+		}
+
+		selected.Contexts[name] = ctx
+		if cluster, ok := kubeconfig.Clusters[ctx.Cluster]; ok {
+			selected.Clusters[ctx.Cluster] = cluster
+		}
+		if authInfo, ok := kubeconfig.AuthInfos[ctx.AuthInfo]; ok {
+			selected.AuthInfos[ctx.AuthInfo] = authInfo
+		}
+	}
+
+	return selected, nil
+}
+
+func sortedKubeconfigContextNames(kubeconfig *clientcmdapi.Config) []string {
+	names := make([]string, 0, len(kubeconfig.Contexts))
+	for name := range kubeconfig.Contexts {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func completeKubeconfigContext(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	srcPath, err := kubeconfigPath()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	kubeconfig, err := clientcmd.LoadFromFile(srcPath)
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	return sortedKubeconfigContextNames(kubeconfig), cobra.ShellCompDirectiveNoFileComp
 }
 
 func init() {
 	rootCmd.AddCommand(importCmd)
-	importCmd.Flags().BoolVar(&importForce, "force", false, "Remove ~/.kube/config after import")
+	importCmd.Flags().BoolVar(&importForce, "force", false, "Remove ~/.kube/config after importing every context")
 }
