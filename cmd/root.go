@@ -14,6 +14,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// PasswordEnvVar is read once at startup and then removed from the environment.
+const PasswordEnvVar = "EKCONF_PASSWORD"
+
 var (
 	passwordFlag  string
 	passwordStdin bool

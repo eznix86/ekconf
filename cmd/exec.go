@@ -344,8 +344,20 @@ func buildExecCommand(ctx context.Context, commandArgs []string, kubeconfigPath 
 			c = exec.CommandContext(ctx, shell, "-ic", fullCmd)
 		}
 	}
-	c.Env = append(os.Environ(), "KUBECONFIG="+kubeconfigPath)
+	c.Env = append(childEnvironment(), "KUBECONFIG="+kubeconfigPath)
 	return c
+}
+
+func childEnvironment() []string {
+	env := os.Environ()
+	filtered := make([]string, 0, len(env))
+	for _, entry := range env {
+		if strings.HasPrefix(entry, PasswordEnvVar+"=") {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered
 }
 
 func validateExecArgs(cmd *cobra.Command, args []string) error {
