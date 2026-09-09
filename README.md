@@ -163,7 +163,7 @@ gh attestation verify ekconf_1.2.0_darwin_arm64.tar.gz --repo eznix86/ekconf
 
 Checked in order:
 
-1. `--password=<value>` flag
+1. `--password=<value>` flag (visible in the process table and shell history, prefer `--password-stdin`)
 2. `--password-stdin` flag
 3. `EKCONF_PASSWORD` environment variable
 4. System keychain (if `keychain=true`)

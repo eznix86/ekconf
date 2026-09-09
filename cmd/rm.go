@@ -20,7 +20,7 @@ var rmCmd = &cobra.Command{
 	Long:  `Remove one or more contexts and their unreferenced clusters and auth infos from the encrypted kubeconfig.`,
 	Example: `  ekconf rm staging
   ekconf rm staging prod
-  ekconf rm --password=secret prod development`,
+  pass show ekube | ekconf rm --password-stdin prod development`,
 	Args:              cobra.MinimumNArgs(1),
 	ValidArgsFunction: completeContext,
 	RunE: func(cmd *cobra.Command, args []string) error {

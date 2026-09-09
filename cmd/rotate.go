@@ -14,7 +14,7 @@ var rotateCmd = &cobra.Command{
 	Short: "Re-encrypt config.enc with a new password",
 	Long:  `Re-encrypt the encrypted kubeconfig with a new password. The old password is required. If keychain is enabled, the stored password is updated automatically.`,
 	Example: `  ekconf rotate
-  ekconf rotate --password=old-secret`,
+  pass show ekube | ekconf rotate --password-stdin`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		currentPassword, err := resolvePassword(cmd.Context())

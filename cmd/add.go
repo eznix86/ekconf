@@ -26,7 +26,7 @@ rename a single-context file on import. If a context name already exists,
 the command prompts for confirmation.`,
 	Example: `  ekconf add ~/.kube/config
   ekconf add staging.yaml -n staging
-  ekconf add --password=secret prod.yaml`,
+  pass show ekube | ekconf add --password-stdin prod.yaml`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		path := args[0]
