@@ -5,11 +5,8 @@ import (
 	"strings"
 
 	"github.com/eznix86/ekconf/internal/config"
-	"github.com/eznix86/ekconf/internal/crypto"
 	"github.com/spf13/cobra"
-	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
-	"sigs.k8s.io/yaml"
 )
 
 type removeResult struct {
@@ -33,11 +30,6 @@ var rmCmd = &cobra.Command{
 		}
 		defer clear(password)
 
-		encPath, err := config.EncPath()
-		if err != nil {
-			return err
-		}
-
 		kubeconfig, err := loadDecryptedKubeconfig(password)
 		if err != nil {
 			return err
@@ -54,30 +46,7 @@ var rmCmd = &cobra.Command{
 			results = append(results, result)
 		}
 
-		mergedData, err := clientcmd.Write(*kubeconfig)
-		if err != nil {
-			return fmt.Errorf("marshal kubeconfig: %w", err)
-		}
-
-		encryptedData, err := crypto.Seal(mergedData, password)
-		if err != nil {
-			return fmt.Errorf("encrypt: %w", err)
-		}
-
-		configPath, err := config.ConfigPath()
-		if err != nil {
-			return err
-		}
-
-		cfgData, err := yaml.Marshal(cfg)
-		if err != nil {
-			return fmt.Errorf("marshal config.yaml: %w", err)
-		}
-
-		if err := replaceFilesAtomically([]fileUpdate{
-			{path: encPath, data: encryptedData},
-			{path: configPath, data: cfgData},
-		}); err != nil {
+		if err := writeMergedKubeconfig(cfg, kubeconfig, password); err != nil {
 			return err
 		}
 

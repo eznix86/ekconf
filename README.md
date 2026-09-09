@@ -69,10 +69,10 @@ ekconf add ~/path/to/kubeconfig.yaml -n my-cluster
 | `ekconf add <path>` | Encrypt and merge a kubeconfig |
 | `ekconf rename <old> <new>` | Rename a context (alias: `mv`) |
 | `ekconf rm <name> [<name>...]` | Remove one or more contexts |
-| `ekconf ls` | List all contexts (alphabetical) |
+| `ekconf ls` | List all contexts (alphabetical, with certificate expiry) |
 | `ekconf view <name>` | View a context's kubeconfig (redacted by default) |
 | `ekconf view <name> --plain` | Include sensitive auth data |
-| `ekconf use <name>` | Set the active context |
+| `ekconf use <name>` | Set the active context, warns if the client certificate expired |
 | `ekconf ns <namespace>` | Set default namespace on the active context |
 | `ekconf exec [<name>] -- <cmd>` | Run a command with decrypted KUBECONFIG |
 | `ekconf rotate` | Re-encrypt with a new password |
@@ -109,6 +109,38 @@ ekconf ns my-namespace
 ekconf exec -- kubectl get pods
 ekconf exec staging -- kubectl get pods
 ```
+
+### Certificate expiry
+
+`ekconf ls` shows the client certificate expiry in an EXPIRES column. Expired
+dates are printed in yellow:
+
+```
+$ ekconf ls
+  NAME          NAMESPACE    EXPIRES
+  demo                       2027-09-10 (in 1y)
+* prod          production   2025-03-01 (expired)
+  soon          kube-system  2026-09-18 (in 9d)
+  token-only
+```
+
+Dates are in your machine's local timezone, with the remaining lifetime in
+parentheses. The NAMESPACE and EXPIRES columns are dropped when no context has
+a value for them.
+
+`ekconf use` warns when the context you switch to has an expired certificate:
+
+```
+$ ekconf use prod
+Switched to context 'prod'
+Warning: client certificate for 'prod' expired on 2025-03-01 14:22:05 UTC
+```
+
+The expiry date is read from `~/.ekube/config.yaml`, so no password is needed. It
+is recorded there whenever a command decrypts the store: `add`, `import`, `rename`,
+`rm`, `view` and `exec`. Contexts added before this feature get their date on the
+next such command. Contexts that authenticate with a token or an exec plugin have
+no client certificate, so no warning is shown for them.
 
 ### Password resolution
 

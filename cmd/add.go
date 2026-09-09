@@ -189,6 +189,8 @@ func mergeKubeconfigContexts(
 }
 
 func writeMergedKubeconfig(cfg *config.Config, kubeconfig *clientcmdapi.Config, password []byte) error {
+	recordContextExpiry(cfg, kubeconfig)
+
 	mergedData, err := clientcmd.Write(*kubeconfig)
 	if err != nil {
 		return fmt.Errorf("marshal merged kubeconfig: %w", err)
