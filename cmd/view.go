@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"net/url"
 
 	"gabe565.com/utils/coloryaml"
 	"github.com/eznix86/ekconf/internal/config"
@@ -101,20 +102,9 @@ func redactAuthInfo(authInfo *clientcmdapi.AuthInfo) *clientcmdapi.AuthInfo {
 		return nil
 	}
 
-	redacted := *authInfo
-	redacted.ClientCertificate = ""
-	redacted.ClientCertificateData = nil
-	redacted.ClientKey = ""
-	redacted.ClientKeyData = nil
-	redacted.Token = ""
-	redacted.TokenFile = ""
-	redacted.Password = ""
-	redacted.AuthProvider = nil
-	redacted.Exec = nil
-	redacted.Impersonate = ""
-	redacted.ImpersonateGroups = nil
-	redacted.ImpersonateUserExtra = nil
-	return &redacted
+	return &clientcmdapi.AuthInfo{
+		Username: authInfo.Username,
+	}
 }
 
 func redactCluster(cluster *clientcmdapi.Cluster) *clientcmdapi.Cluster {
@@ -122,8 +112,28 @@ func redactCluster(cluster *clientcmdapi.Cluster) *clientcmdapi.Cluster {
 		return nil
 	}
 
-	redacted := *cluster
-	redacted.CertificateAuthority = ""
-	redacted.CertificateAuthorityData = nil
-	return &redacted
+	return &clientcmdapi.Cluster{
+		Server:                cluster.Server,
+		TLSServerName:         cluster.TLSServerName,
+		InsecureSkipTLSVerify: cluster.InsecureSkipTLSVerify,
+		DisableCompression:    cluster.DisableCompression,
+		ProxyURL:              redactProxyURL(cluster.ProxyURL),
+	}
+}
+
+func redactProxyURL(proxyURL string) string {
+	if proxyURL == "" {
+		return ""
+	}
+
+	parsed, err := url.Parse(proxyURL)
+	if err != nil {
+		return ""
+	}
+	if parsed.User == nil {
+		return proxyURL
+	}
+
+	parsed.User = url.User(parsed.User.Username())
+	return parsed.String()
 }
