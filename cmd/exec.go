@@ -21,6 +21,8 @@ import (
 
 var execNoShell bool
 
+var cleanupSignals = []os.Signal{syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT}
+
 type execRequest struct {
 	contextName string
 	commandArgs []string
@@ -74,7 +76,9 @@ var execCmd = &cobra.Command{
 	Short: "Run a command with decrypted config injected via KUBECONFIG",
 	Long: `Run a command with the decrypted kubeconfig for a specific context injected
 via the KUBECONFIG environment variable. The temp file is wiped and deleted
-on normal exit and on SIGINT/SIGTERM. SIGKILL, power loss, and kernel panic can still orphan the file.
+on normal exit and on SIGINT, SIGTERM, SIGHUP and SIGQUIT, so closing the
+terminal on a long-running command such as kubectl port-forward still wipes it.
+SIGKILL, power loss, and kernel panic can still orphan the file.
 
 On Linux the temp file is written to /dev/shm (RAM-backed tmpfs). On macOS
 /dev/shm does not exist, so the temp file is written to the system temp dir
@@ -131,7 +135,7 @@ Use -- to separate the context name from the command.`,
 		}()
 
 		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+		signal.Notify(sigCh, cleanupSignals...)
 		go func() {
 			<-sigCh
 			signal.Stop(sigCh)
