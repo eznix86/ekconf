@@ -27,6 +27,45 @@ var (
 )
 
 func Resolve(ctx context.Context, passwordFlag string, passwordStdin, useKeychain bool, envPassword string) ([]byte, error) {
+	pw, err := nonInteractive(passwordFlag, passwordStdin, envPassword)
+	if err != nil {
+		return nil, err
+	}
+	if pw != nil {
+		return pw, nil
+	}
+
+	if useKeychain {
+		pw, err := keyring.Get(keyringService, currentUser())
+		if err == nil {
+			return []byte(pw), nil
+		}
+	}
+
+	return promptPassword(ctx, useKeychain)
+}
+
+// ResolveNew supplies the password that creates the encrypted store. Unlike
+// Resolve it never falls back to the keychain, which cannot hold a password for
+// a store that does not exist yet, and it enforces the same length rule and
+// confirmation prompt as a rotation.
+func ResolveNew(ctx context.Context, passwordFlag string, passwordStdin bool, envPassword string) ([]byte, error) {
+	pw, err := nonInteractive(passwordFlag, passwordStdin, envPassword)
+	if err != nil {
+		return nil, err
+	}
+	if pw == nil {
+		return PromptNewPassword(ctx)
+	}
+
+	if err := validateNewPassword(pw); err != nil {
+		clear(pw)
+		return nil, err
+	}
+	return pw, nil
+}
+
+func nonInteractive(passwordFlag string, passwordStdin bool, envPassword string) ([]byte, error) {
 	if passwordFlag != "" {
 		return []byte(passwordFlag), nil
 	}
@@ -43,14 +82,7 @@ func Resolve(ctx context.Context, passwordFlag string, passwordStdin, useKeychai
 		return []byte(envPassword), nil
 	}
 
-	if useKeychain {
-		pw, err := keyring.Get(keyringService, currentUser())
-		if err == nil {
-			return []byte(pw), nil
-		}
-	}
-
-	return promptPassword(ctx, useKeychain)
+	return nil, nil
 }
 
 func Store(password []byte) error {

@@ -142,6 +142,10 @@ is recorded there whenever a command decrypts the store: `add`, `import`, `renam
 next such command. Contexts that authenticate with a token or an exec plugin have
 no client certificate, so no warning is shown for them.
 
+The first `ekconf add` or `ekconf import` creates the store, and that password
+must be at least 12 characters. Interactive prompts ask for confirmation, since
+a typo there is unrecoverable. An existing store keeps whatever password it has.
+
 ### Release integrity
 
 `ekconf update` refuses to install a release unless the `checksums.txt` carries a

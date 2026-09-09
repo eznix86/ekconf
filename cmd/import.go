@@ -54,7 +54,7 @@ with named contexts, because that would delete the contexts you did not import.`
 			return err
 		}
 
-		password, err := resolvePassword(cmd.Context())
+		password, err := resolvePasswordForStore(cmd.Context())
 		if err != nil {
 			return err
 		}
