@@ -42,6 +42,8 @@ by default. Use --plain to include all fields.`,
 			return err
 		}
 
+		refreshContextExpiry(cmd.ErrOrStderr(), cfg, kubeconfig)
+
 		if _, ok := kubeconfig.Contexts[contextName]; !ok {
 			return fmt.Errorf("context '%s' not found", contextName)
 		}

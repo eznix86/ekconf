@@ -249,10 +249,12 @@ func TestLS_WithContexts(t *testing.T) {
 	assert.Contains(t, got, "prod")
 	assert.Contains(t, got, "staging")
 	assert.Contains(t, got, "* prod")
-	// contexts should be in alphabetical order
-	lines := strings.Split(strings.TrimSpace(got), "\n")
-	assert.Equal(t, "* prod                          namespace: production", strings.TrimSpace(lines[0]))
-	assert.Equal(t, "staging                       namespace: staging", strings.TrimSpace(lines[1]))
+	// contexts should be in alphabetical order, under a header row
+	lines := strings.Split(strings.TrimRight(got, "\n"), "\n")
+	require.Len(t, lines, 3)
+	assert.Equal(t, "  NAME     NAMESPACE", lines[0])
+	assert.Equal(t, "* prod     production", lines[1])
+	assert.Equal(t, "  staging  staging", lines[2])
 }
 
 func TestUse_Success(t *testing.T) {

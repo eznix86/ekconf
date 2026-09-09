@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -105,7 +106,7 @@ Use -- to separate the context name from the command.`,
 
 		storePasswordIfNeeded(cmd.ErrOrStderr(), password)
 
-		out, err := decryptedContextKubeconfig(cfg, req.contextName, password)
+		out, err := decryptedContextKubeconfig(cmd.ErrOrStderr(), cfg, req.contextName, password)
 		if err != nil {
 			return err
 		}
@@ -187,11 +188,13 @@ func parseExecRequest(cmd *cobra.Command, cfg *config.Config, args []string) (ex
 	return execRequest{contextName: contextName, commandArgs: commandArgs}, nil
 }
 
-func decryptedContextKubeconfig(cfg *config.Config, contextName string, password []byte) ([]byte, error) {
+func decryptedContextKubeconfig(w io.Writer, cfg *config.Config, contextName string, password []byte) ([]byte, error) {
 	kubeconfig, err := loadDecryptedKubeconfig(password)
 	if err != nil {
 		return nil, err
 	}
+
+	refreshContextExpiry(w, cfg, kubeconfig)
 
 	singleCtx, err := singleContextKubeconfig(cfg, kubeconfig, contextName)
 	if err != nil {

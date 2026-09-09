@@ -10,7 +10,11 @@ import (
 var useCmd = &cobra.Command{
 	Use:   "use <name>",
 	Short: "Set the active context",
-	Long:  `Set the active context in config.yaml. This does not modify the encrypted kubeconfig.`,
+	Long: `Set the active context in config.yaml. This does not modify the encrypted kubeconfig.
+
+If the context's client certificate has already expired, a warning with the
+expiry date is printed to stderr. Expiry is read from config.yaml, so no
+password is needed. It is recorded whenever ekconf decrypts the store.`,
 	Example: `  ekconf use prod
   ekconf use staging`,
 	Args:              cobra.ExactArgs(1),
@@ -31,8 +35,12 @@ var useCmd = &cobra.Command{
 			return fmt.Errorf("save current context: %w", err)
 		}
 
-		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Switched to context '%s'\n", contextName)
-		return err
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Switched to context '%s'\n", contextName); err != nil {
+			return err
+		}
+
+		warnIfExpired(cmd.ErrOrStderr(), contextName, cfg.Contexts[contextName])
+		return nil
 	},
 }
 

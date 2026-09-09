@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"sigs.k8s.io/yaml"
 )
@@ -17,7 +18,8 @@ const (
 )
 
 type ContextEntry struct {
-	Namespace string `json:"namespace,omitempty"`
+	Namespace string     `json:"namespace,omitempty"`
+	Expires   *time.Time `json:"expires,omitempty"`
 }
 
 type Config struct {
@@ -167,7 +169,9 @@ func AddContext(name, namespace string) error {
 		namespace = DefaultNamespace
 	}
 
-	cfg.Contexts[name] = ContextEntry{Namespace: namespace}
+	entry := cfg.Contexts[name]
+	entry.Namespace = namespace
+	cfg.Contexts[name] = entry
 	return Save(cfg)
 }
 
