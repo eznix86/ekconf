@@ -259,22 +259,63 @@ commands like `ls` and `use` never need your password.
 
 ### Threat model
 
+Read this before deciding what `ekconf` is worth to you.
+
+#### What it protects against
+
+**Copies of your home directory that end up elsewhere.** Time Machine, a home
+directory synced to iCloud or Dropbox, an rsync to a NAS, an archive you send a
+colleague. Those copies outlive the machine and land on systems with different
+access rules. `config.enc` is ciphertext in all of them.
+
+**A lost or stolen laptop that is powered off.** Full-disk encryption covers
+this too, when it is enabled and the machine is actually off rather than
+suspended.
+
+**Accidental disclosure.** A screen share, a pasted support bundle, a recorded
+demo, a `cat` in a terminal someone else is watching.
+
+**The exposure window.** A plaintext `~/.kube/config` is readable every second
+of every day, and many tools open it. With `ekconf` the decrypted form exists
+only for the duration of a single command.
+
+#### What it does not protect against
+
+**Anything running as your user.** A malicious dependency, a compromised editor
+extension, a rogue postinstall script. Such a process does not need to break the
+encryption. It can read the OS keychain when `keychain=true`, read the temp file
+while `ekconf exec` is running, log the password prompt, or replace the `ekconf`
+binary on your `PATH`.
+
+Encryption at rest cannot defend a machine that is already compromised. If yours
+is, assume every credential in the store is compromised too, and rotate them.
+
+The defence that does work there is credentials that expire on their own: OIDC,
+or your cloud provider's exec plugin. A stolen short-lived token is worthless in
+an hour. `ekconf` changes where your credentials come to rest. It does not make
+a compromised machine safe.
+
+#### Offline brute force
+
 `config.enc` is protected by Argon2id (64 MiB, 3 iterations), which costs
 roughly 0.5s per attempt. There is no lockout or attempt limit: anyone who
 obtains the file can brute-force it offline at that cost per guess. Your
 password is the only thing standing between an attacker and your cluster
 credentials.
 
-`ekconf rotate` requires at least 12 characters. A long passphrase is worth
-more than a short complex one. Enabling `keychain=true` keeps the password in
-the OS keychain instead of your shell history or a script.
+Creating the store and running `ekconf rotate` both require at least 12
+characters. A long passphrase is worth more than a short complex one. Enabling
+`keychain=true` keeps the password out of your shell history and scripts, at the
+cost of making it readable by any process running as you.
 
-In memory, the password is held as a byte slice and zeroed as soon as each
-command is done with it. The keychain path is the exception: `go-keyring`
-exposes a string-only API, so on `keychain=true` the password also lands in
-immutable Go strings that cannot be zeroed and persist until garbage
-collection. This only matters against an attacker who can already read the
-process heap.
+#### Password in memory
+
+The password is held as a byte slice and zeroed as soon as each command is done
+with it. The keychain path is the exception: `go-keyring` exposes a string-only
+API, so on `keychain=true` the password also lands in immutable Go strings that
+cannot be zeroed and persist until garbage collection. This only matters against
+an attacker who can already read the process heap, who has easier options
+available anyway.
 
 ##### `ekconf import [<name>...] [--force]`
 
