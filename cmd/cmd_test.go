@@ -45,8 +45,12 @@ func resetCommandTestState(t *testing.T) {
 	ejectForce = false
 	ejectMerge = false
 	execNoShell = false
+	updateCheckOnly = false
+	updateForce = false
 	resetBoolFlag(ejectCmd, "force")
 	resetBoolFlag(ejectCmd, "merge")
+	resetBoolFlag(updateCmd, "check")
+	resetBoolFlag(updateCmd, "force")
 	rootCmd.SetArgs(nil)
 	rootCmd.SetOut(os.Stdout)
 	rootCmd.SetErr(os.Stderr)
@@ -59,8 +63,12 @@ func resetCommandTestState(t *testing.T) {
 		ejectForce = false
 		ejectMerge = false
 		execNoShell = false
+		updateCheckOnly = false
+		updateForce = false
 		resetBoolFlag(ejectCmd, "force")
 		resetBoolFlag(ejectCmd, "merge")
+		resetBoolFlag(updateCmd, "check")
+		resetBoolFlag(updateCmd, "force")
 		rootCmd.SetArgs(nil)
 		rootCmd.SetOut(os.Stdout)
 		rootCmd.SetErr(os.Stderr)

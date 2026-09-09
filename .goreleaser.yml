@@ -38,6 +38,17 @@ checksum:
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
 
+signs:
+  - id: checksums
+    cmd: go
+    args:
+      - run
+      - ./tools/sign
+      - "${artifact}"
+      - "${signature}"
+    signature: "${artifact}.sig"
+    artifacts: checksum
+
 changelog:
   disable: true
 

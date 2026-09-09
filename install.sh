@@ -43,15 +43,19 @@ curl -fL --progress-bar "$url" -o "$tmpdir/$asset"
 
 echo "Verifying checksum..."
 curl -fsSL "$checksums_url" -o "$tmpdir/checksums.txt"
-tar -xzf "$tmpdir/$asset" -C "$tmpdir"
 expected="$(grep "$asset" "$tmpdir/checksums.txt" | awk '{print $1}')"
 actual="$(openssl dgst -sha256 "$tmpdir/$asset" | awk '{print $NF}')"
+if [[ -z "$expected" ]]; then
+	echo "No checksum published for $asset" >&2
+	exit 1
+fi
 if [[ "$expected" != "$actual" ]]; then
 	echo "Checksum mismatch: expected $expected, got $actual" >&2
 	exit 1
 fi
 
 echo "Installing to ${BIN_DIR}/${BIN_NAME}..."
+tar -xzf "$tmpdir/$asset" -C "$tmpdir"
 install -m 0755 "$tmpdir/$BIN_NAME" "$BIN_DIR/$BIN_NAME"
 
 echo

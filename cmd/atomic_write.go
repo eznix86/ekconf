@@ -50,6 +50,17 @@ func recoverPendingFileTransaction() error {
 		return fmt.Errorf("parse transaction journal: %w", err)
 	}
 
+	recoverable, err := recoverableJournalPaths()
+	if err != nil {
+		return err
+	}
+
+	for _, update := range tx.Updates {
+		if _, ok := recoverable[filepath.Clean(update.Path)]; !ok {
+			return fmt.Errorf("refusing to recover %s: not a file ekconf manages", update.Path)
+		}
+	}
+
 	for _, update := range tx.Updates {
 		if err := writeFileAtomically(update.Path, update.Data); err != nil {
 			return fmt.Errorf("recover %s: %w", update.Path, err)
@@ -150,6 +161,23 @@ func replaceFilesAtomically(updates []fileUpdate) (retErr error) {
 	}
 
 	return retErr
+}
+
+func recoverableJournalPaths() (map[string]struct{}, error) {
+	encPath, err := config.EncPath()
+	if err != nil {
+		return nil, err
+	}
+	configPath, err := config.ConfigPath()
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]struct{}{
+		filepath.Clean(encPath):             {},
+		filepath.Clean(configPath):          {},
+		filepath.Clean(encPath + ".v0.bak"): {},
+	}, nil
 }
 
 func transactionJournalPath() (string, error) {

