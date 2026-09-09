@@ -1,11 +1,14 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/eznix86/ekconf/internal/config"
+	"github.com/eznix86/ekconf/internal/password"
 	"github.com/spf13/cobra"
+	"github.com/zalando/go-keyring"
 )
 
 var configCmd = &cobra.Command{
@@ -14,7 +17,9 @@ var configCmd = &cobra.Command{
 	Long: `View or set ekconf configuration options.
 
 Use "config list" to print the current configuration.
-Use "config keychain=true" to enable keychain integration.`,
+Use "config keychain=true" to enable keychain integration. Setting it to false
+also removes any password already stored in the keychain, which is the way to
+recover if a wrong password was saved.`,
 	Example: `  ekconf config list
   ekconf config keychain=true
   ekconf config keychain=false`,
@@ -40,6 +45,9 @@ Use "config keychain=true" to enable keychain integration.`,
 				cfg.Keychain = true
 			case "false":
 				cfg.Keychain = false
+				if err := password.Delete(); err != nil && !errors.Is(err, keyring.ErrNotFound) {
+					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to remove the stored password: %v\n", err)
+				}
 			default:
 				return fmt.Errorf("keychain must be 'true' or 'false', got: %s", value)
 			}

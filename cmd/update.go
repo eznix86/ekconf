@@ -5,7 +5,9 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -26,12 +28,26 @@ import (
 
 const updateRepo = "eznix86/ekconf"
 
+const releaseSigningPublicKeyBase64 = "SFJvBeLRhjqvjBZdJd2P43aQPH9024fPSExnSHNLVvI="
+
+const checksumsSignatureAsset = "checksums.txt.sig"
+
 var (
-	updateAPIBaseURL  = "https://api.github.com"
-	updateHTTPClient  = &http.Client{Timeout: 30 * time.Second}
-	currentExecutable = os.Executable
-	updateCheckOnly   bool
+	updateAPIBaseURL        = "https://api.github.com"
+	updateHTTPClient        = &http.Client{Timeout: 30 * time.Second}
+	currentExecutable       = os.Executable
+	releaseSigningPublicKey = mustDecodeSigningKey(releaseSigningPublicKeyBase64)
+	updateCheckOnly         bool
+	updateForce             bool
 )
+
+func mustDecodeSigningKey(encoded string) ed25519.PublicKey {
+	key, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil || len(key) != ed25519.PublicKeySize {
+		panic("invalid embedded release signing public key")
+	}
+	return ed25519.PublicKey(key)
+}
 
 type githubRelease struct {
 	TagName string        `json:"tag_name"`
@@ -79,6 +95,7 @@ Use --check to check for updates without installing.`,
 			assetName string
 			data      []byte
 			checksums []byte
+			signature []byte
 		)
 
 		steps := []struct {
@@ -96,7 +113,15 @@ Use --check to check for updates without installing.`,
 					return err
 				}
 
-				assetName = updateAssetName(strings.TrimPrefix(release.TagName, "v"), platform)
+				latest := strings.TrimPrefix(release.TagName, "v")
+				if !updateForce && isReleaseBuild() && !isNewerVersion(latest, version) {
+					return fmt.Errorf(
+						"latest release %s is not newer than the installed version %s, use --force to install it anyway",
+						release.TagName, version,
+					)
+				}
+
+				assetName = updateAssetName(latest, platform)
 				assetURL, err := releaseAssetURL(release, assetName)
 				if err != nil {
 					return err
@@ -111,7 +136,19 @@ Use --check to check for updates without installing.`,
 					return err
 				}
 				checksums, err = downloadAsset(cmd.Context(), checksumURL)
+				if err != nil {
+					return err
+				}
+
+				signatureURL, err := releaseAssetURL(release, checksumsSignatureAsset)
+				if err != nil {
+					return err
+				}
+				signature, err = downloadAsset(cmd.Context(), signatureURL)
 				return err
+			}},
+			{"Verifying signature...", func() error {
+				return verifyReleaseSignature(checksums, signature)
 			}},
 			{"Verifying checksum...", func() error {
 				return verifyReleaseChecksum(checksums, releasePayload{assetName: assetName, data: data})
@@ -146,6 +183,7 @@ Use --check to check for updates without installing.`,
 func init() {
 	rootCmd.AddCommand(updateCmd)
 	updateCmd.Flags().BoolVar(&updateCheckOnly, "check", false, "Check for updates without installing")
+	updateCmd.Flags().BoolVar(&updateForce, "force", false, "Install the latest release even if it is not newer than the installed version")
 }
 
 func MaybePrintUpdateNotice(ctx context.Context, w io.Writer) bool {
@@ -172,7 +210,7 @@ func updateNotice(ctx context.Context) (string, bool) {
 }
 
 func updateNoticeResult(ctx context.Context) (string, error) {
-	if version == "dev" || version == "" {
+	if !isReleaseBuild() {
 		return "", nil
 	}
 
@@ -257,6 +295,25 @@ func releaseAssetURL(release *githubRelease, assetName string) (string, error) {
 	}
 
 	return "", fmt.Errorf("release %s does not include asset %s", release.TagName, assetName)
+}
+
+func isReleaseBuild() bool {
+	return version != "dev" && version != ""
+}
+
+func verifyReleaseSignature(checksums, signature []byte) error {
+	if len(signature) != ed25519.SignatureSize {
+		return fmt.Errorf(
+			"release signature is %d bytes, expected %d: refusing to install an unsigned or malformed release",
+			len(signature), ed25519.SignatureSize,
+		)
+	}
+
+	if !ed25519.Verify(releaseSigningPublicKey, checksums, signature) {
+		return errors.New("release signature does not match the embedded signing key: refusing to install")
+	}
+
+	return nil
 }
 
 func verifyReleaseChecksum(checksums []byte, payload releasePayload) error {

@@ -38,6 +38,19 @@ checksum:
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
 
+signs:
+  - id: checksums
+    cmd: go
+    args:
+      - run
+      - ./tools/sign
+      - "${artifact}"
+      - "${signature}"
+    signature: "${artifact}.sig"
+    artifacts: checksum
+    env:
+      - EKCONF_RELEASE_SIGNING_KEY={{ .Env.EKCONF_RELEASE_SIGNING_KEY }}
+
 changelog:
   disable: true
 

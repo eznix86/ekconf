@@ -104,12 +104,12 @@ Use -- to separate the context name from the command.`,
 		}
 		defer clear(password)
 
-		storePasswordIfNeeded(cmd.ErrOrStderr(), password)
-
 		out, err := decryptedContextKubeconfig(cmd.ErrOrStderr(), cfg, req.contextName, password)
 		if err != nil {
 			return err
 		}
+
+		storePasswordIfNeeded(cmd.ErrOrStderr(), password)
 
 		tmpPath, cleanupTemp, err := writeTempKubeconfig(out)
 		clear(out)

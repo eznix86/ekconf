@@ -142,6 +142,19 @@ is recorded there whenever a command decrypts the store: `add`, `import`, `renam
 next such command. Contexts that authenticate with a token or an exec plugin have
 no client certificate, so no warning is shown for them.
 
+### Release integrity
+
+`ekconf update` refuses to install a release unless the `checksums.txt` carries a
+valid ed25519 signature from the project signing key, which is compiled into the
+binary. It also refuses to install a release that is not newer than the version
+you are running. Pass `--force` to install an older release on purpose.
+
+Releases also carry GitHub build provenance. To check a downloaded archive:
+
+```sh
+gh attestation verify ekconf_1.2.0_darwin_arm64.tar.gz --repo eznix86/ekconf
+```
+
 ### Password resolution
 
 Checked in order:

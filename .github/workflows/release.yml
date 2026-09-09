@@ -16,6 +16,8 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      id-token: write
+      attestations: write
 
     steps:
       - name: Validate manual tag
@@ -51,3 +53,9 @@ jobs:
           args: release --clean --config .goreleaser.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EKCONF_RELEASE_SIGNING_KEY: ${{ secrets.EKCONF_RELEASE_SIGNING_KEY }}
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: dist/*.tar.gz
