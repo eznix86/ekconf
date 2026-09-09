@@ -85,7 +85,12 @@ On Linux the temp file is written to /dev/shm (RAM-backed tmpfs). On macOS
 (on disk, not RAM-backed) with 0600 permissions inside a 0700 directory.
 
 If no context name is given, the active context from config.yaml is used.
-Use -- to separate the context name from the command.`,
+Use -- to separate the context name from the command.
+
+The command name runs through your interactive shell so aliases and functions
+resolve. Its arguments are quoted, so a value containing shell metacharacters
+is passed through as data. Use --no-shell with sh -c when you want an argument
+interpreted as shell syntax.`,
 	Example: `  ekconf exec -- kubectl get pods
   ekconf exec staging -- kubectl get pods
   ekconf exec --no-shell -- sh -c "echo $KUBECONFIG"`,
@@ -311,13 +316,26 @@ func writeTempKubeconfig(data []byte) (string, func() error, error) {
 	return tmpPath, cleanup, nil
 }
 
+func shellCommandLine(commandArgs []string) string {
+	parts := make([]string, 0, len(commandArgs))
+	parts = append(parts, commandArgs[0])
+	for _, arg := range commandArgs[1:] {
+		parts = append(parts, shellQuote(arg))
+	}
+	return strings.Join(parts, " ")
+}
+
+func shellQuote(arg string) string {
+	return "'" + strings.ReplaceAll(arg, "'", `'\''`) + "'"
+}
+
 func buildExecCommand(ctx context.Context, commandArgs []string, kubeconfigPath string) *exec.Cmd {
 	var c *exec.Cmd
 	if execNoShell {
 		//nolint:gosec // ekconf exec intentionally runs the command requested by the user.
 		c = exec.CommandContext(ctx, commandArgs[0], commandArgs[1:]...)
 	} else {
-		fullCmd := strings.Join(commandArgs, " ")
+		fullCmd := shellCommandLine(commandArgs)
 		shell := os.Getenv("SHELL")
 		if shell == "" {
 			c = exec.CommandContext(ctx, "sh", "-c", fullCmd)
