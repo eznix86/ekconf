@@ -44,6 +44,7 @@ encryption at rest and optional keychain integration.`,
 		if cmd.Name() == "version" || cmd.Name() == "update" || cmd.Name() == "completion" {
 			return nil
 		}
+		warnAboutPasswordFlag(cmd.ErrOrStderr())
 		if err := config.EnsureDir(); err != nil {
 			return err
 		}
@@ -75,7 +76,7 @@ func init() {
 	rootCmd.InitDefaultCompletionCmd()
 	rootCmd.InitDefaultVersionFlag()
 	rootCmd.SetVersionTemplate("{{.Version}}\n")
-	rootCmd.PersistentFlags().StringVar(&passwordFlag, "password", "", "Password for decryption (inline)")
+	rootCmd.PersistentFlags().StringVar(&passwordFlag, "password", "", "Password for decryption, visible in the process table, prefer --password-stdin")
 	rootCmd.PersistentFlags().BoolVar(&passwordStdin, "password-stdin", false, "Read password from stdin")
 	rootCmd.MarkFlagsMutuallyExclusive("password", "password-stdin")
 }
@@ -89,6 +90,14 @@ func versionString() string {
 		parts = append(parts, fmt.Sprintf("built: %s", built))
 	}
 	return strings.Join(parts, "\n")
+}
+
+func warnAboutPasswordFlag(w io.Writer) {
+	if passwordFlag == "" {
+		return
+	}
+
+	warnf(w, "Warning: --password puts the password in the process table and your shell history, use --password-stdin instead\n")
 }
 
 func shouldUseKeychain() bool {

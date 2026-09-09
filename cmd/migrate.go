@@ -14,7 +14,7 @@ var migrateCmd = &cobra.Command{
 	Short: "Migrate config.enc to the current encrypted format",
 	Long:  `Migrate the encrypted kubeconfig store from the legacy ekconf format to the current self-describing SecretBox format.`,
 	Example: `  ekconf migrate
-  ekconf migrate --password=secret`,
+  pass show ekube | ekconf migrate --password-stdin`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		encPath, err := config.EncPath()

@@ -19,7 +19,7 @@ Clusters and auth infos owned by the context are renamed alongside it.
 Entries shared with another context are left untouched. If the renamed
 context is active, it stays active under its new name.`,
 	Example: `  ekconf rename staging preprod
-  ekconf rename --password=secret prod production`,
+  pass show ekube | ekconf rename --password-stdin prod production`,
 	Args:              cobra.ExactArgs(2),
 	ValidArgsFunction: completeContext,
 	RunE: func(cmd *cobra.Command, args []string) error {

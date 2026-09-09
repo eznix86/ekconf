@@ -21,7 +21,7 @@ always colorized YAML. Sensitive fields (tokens, certificates) are redacted
 by default. Use --plain to include all fields.`,
 	Example: `  ekconf view prod
   ekconf view --plain staging
-  ekconf view --password=secret dev`,
+  pass show ekube | ekconf view --password-stdin dev`,
 	Args:              cobra.ExactArgs(1),
 	ValidArgsFunction: completeContext,
 	RunE: func(cmd *cobra.Command, args []string) error {
