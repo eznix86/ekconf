@@ -48,8 +48,6 @@ signs:
       - "${signature}"
     signature: "${artifact}.sig"
     artifacts: checksum
-    env:
-      - EKCONF_RELEASE_SIGNING_KEY={{ .Env.EKCONF_RELEASE_SIGNING_KEY }}
 
 changelog:
   disable: true

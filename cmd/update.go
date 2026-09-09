@@ -28,7 +28,7 @@ import (
 
 const updateRepo = "eznix86/ekconf"
 
-const releaseSigningPublicKeyBase64 = "SFJvBeLRhjqvjBZdJd2P43aQPH9024fPSExnSHNLVvI="
+const releaseSigningPublicKeyBase64 = "BmFBSolJgirUURXMVVZJ2NHfGSYZ2IPGn/DM6m8CdUs="
 
 const checksumsSignatureAsset = "checksums.txt.sig"
 
