@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -96,6 +97,36 @@ func shouldUseKeychain() bool {
 		return false
 	}
 	return cfg.Keychain
+}
+
+// resolvePasswordForStore prompts for a new password, with confirmation and a
+// length check, when the encrypted store does not exist yet. An existing store
+// takes the ordinary resolution path.
+func resolvePasswordForStore(ctx context.Context) ([]byte, error) {
+	exists, err := encryptedStoreExists()
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		return resolvePassword(ctx)
+	}
+	return password.ResolveNew(ctx, passwordFlag, passwordStdin, envPassword)
+}
+
+func encryptedStoreExists() (bool, error) {
+	encPath, err := config.EncPath()
+	if err != nil {
+		return false, err
+	}
+
+	switch _, err := os.Stat(encPath); {
+	case err == nil:
+		return true, nil
+	case os.IsNotExist(err):
+		return false, nil
+	default:
+		return false, fmt.Errorf("stat config.enc: %w", err)
+	}
 }
 
 func resolvePassword(ctx context.Context) ([]byte, error) {
